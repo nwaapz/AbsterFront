@@ -1,58 +1,98 @@
-// src/App.tsx
+// src/App.jsx  (rename file to .jsx to avoid esbuild JSX loader issues)
 import React from "react";
-import { useAccount } from "wagmi";
-import { parseEther } from "viem";
+import SyncPrivyToWagmi from "./SyncPrivyToWagmi.jsx";           // or ./SyncWagmi.jsx if that's your file
+import WalletSelector from "./WalletSelector.jsx";
+import PrivyWagmiDebug from "./PrivyWagmiDebug.jsx";
+import ForceActivatePrivyWallet from "./ForceActivatePrivyWallet.jsx";
 import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
-import { useSendTransaction } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 
 export default function App() {
-  const { address, status } = useAccount();
   const { login, link } = useAbstractPrivyLogin();
-  const { sendTransaction, isLoading } = useSendTransaction();
+  const { ready, authenticated, user } = usePrivy();
+  const { address, status } = useAccount();
 
-  async function handleSign() {
-    // if you need direct Privy cross-app signMessage hook you'd import/use it,
-    // but Wagmi signer should work after login
-    try {
-      // placeholder: you can use a wagmi signMessage hook or Privy cross-app sign
-      alert("Implement signMessage flow (use useCrossAppAccounts() from @privy-io/react-auth if needed)");
-    } catch (err) {
-      console.error(err);
+  // unified handler: if already authenticated -> link(), otherwise login()
+  const handleLoginOrLink = async () => {
+    if (!ready) {
+      alert("Privy not ready yet — wait a moment.");
+      return;
     }
-  }
+
+    if (authenticated) {
+      try {
+        await link();
+        console.log("Linked AGW to existing Privy account.");
+        return;
+      } catch (err) {
+        console.error("link() failed:", err);
+        alert("Link failed: " + (err?.message || err));
+        return;
+      }
+    }
+
+    try {
+      await login();
+      console.log("login() finished.");
+    } catch (err) {
+      console.warn("login() error:", err);
+      // fallback to link() when appropriate
+      if (err && err.message && err.message.includes("already logged in")) {
+        try {
+          await link();
+        } catch (e) {
+          console.error("fallback link() failed:", e);
+          alert("Auth failure: " + (e?.message || e));
+        }
+      } else {
+        alert("Login error: " + (err?.message || err));
+      }
+    }
+  };
 
   return (
     <div style={{ padding: 24 }}>
       <h1>Abstract + Privy demo</h1>
 
       <div style={{ marginBottom: 12 }}>
-        <button onClick={() => login()}>Login with Abstract</button>
-        <button onClick={() => link()} style={{ marginLeft: 8 }}>Link Abstract</button>
-      </div>
-
-      <div>
-        <strong>Wallet status:</strong> {status}
-      </div>
-      <div>
-        <strong>Address:</strong> {address ?? "—"}
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        <button onClick={handleSign} disabled={!address}>Sign message</button>
-        <button
-          onClick={() =>
-            sendTransaction?.({
-              request: {
-                to: "0x000000000000000000000000000000000000dead",
-                value: parseEther("0.00001"),
-              },
-            })
-          }
-          style={{ marginLeft: 8 }}
-          disabled={!address || isLoading}
-        >
-          {isLoading ? "Sending..." : "Send tiny tx"}
+        <button onClick={handleLoginOrLink}>
+          {authenticated ? "Link Abstract Wallet" : "Login with Abstract"}
         </button>
+        <button
+          onClick={async () => {
+            try {
+              await link();
+            } catch (e) {
+              console.error("Manual link() failed:", e);
+              alert("Link failed: " + (e?.message || e));
+            }
+          }}
+          style={{ marginLeft: 8 }}
+        >
+          Link Abstract (manual)
+        </button>
+      </div>
+
+      <div><strong>Wagmi status:</strong> {status}</div>
+      <div><strong>Wagmi address:</strong> {address || "—"}</div>
+
+      {/* Auto-sync (original helper, keep if you want) */}
+      <SyncPrivyToWagmi />
+
+      {/* Force-activate directly from user.linkedAccounts if needed */}
+      <ForceActivatePrivyWallet />
+
+      {/* Optional: show selector if user wants to pick a different Privy wallet */}
+      <WalletSelector />
+
+      {/* Debug info */}
+      <PrivyWagmiDebug />
+
+      {/* helpful trace */}
+      <div style={{ marginTop: 12 }}>
+        <strong>Privy authenticated:</strong> {String(authenticated)}{" "}
+        {user?.linkedAccounts ? `(linked: ${user.linkedAccounts.length})` : ""}
       </div>
     </div>
   );

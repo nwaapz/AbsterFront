@@ -1,3 +1,4 @@
+// ./src/Providers.tsx
 import { AbstractPrivyProvider } from "@abstract-foundation/agw-react/privy";
 import { abstract } from "viem/chains"; // Import your chain here
 
