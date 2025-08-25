@@ -1,19 +1,20 @@
-// src/App.jsx  (rename file to .jsx to avoid esbuild JSX loader issues)
+// src/App.jsx
 import React from "react";
-import SyncPrivyToWagmi from "./SyncPrivyToWagmi.jsx";           // or ./SyncWagmi.jsx if that's your file
+import SyncPrivyToWagmi from "./SyncPrivyToWagmi.jsx";
 import WalletSelector from "./WalletSelector.jsx";
 import PrivyWagmiDebug from "./PrivyWagmiDebug.jsx";
 import ForceActivatePrivyWallet from "./ForceActivatePrivyWallet.jsx";
 import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
+import BalanceAndSend from "./BalanceAndSend.jsx";
 
 export default function App() {
   const { login, link } = useAbstractPrivyLogin();
   const { ready, authenticated, user } = usePrivy();
   const { address, status } = useAccount();
 
-  // unified handler: if already authenticated -> link(), otherwise login()
+  // unified handler: login or link
   const handleLoginOrLink = async () => {
     if (!ready) {
       alert("Privy not ready yet — wait a moment.");
@@ -37,8 +38,7 @@ export default function App() {
       console.log("login() finished.");
     } catch (err) {
       console.warn("login() error:", err);
-      // fallback to link() when appropriate
-      if (err && err.message && err.message.includes("already logged in")) {
+      if (err?.message?.includes("already logged in")) {
         try {
           await link();
         } catch (e) {
@@ -77,22 +77,23 @@ export default function App() {
       <div><strong>Wagmi status:</strong> {status}</div>
       <div><strong>Wagmi address:</strong> {address || "—"}</div>
 
-      {/* Auto-sync (original helper, keep if you want) */}
+      {/* Auto-sync */}
       <SyncPrivyToWagmi />
-
-      {/* Force-activate directly from user.linkedAccounts if needed */}
       <ForceActivatePrivyWallet />
-
-      {/* Optional: show selector if user wants to pick a different Privy wallet */}
       <WalletSelector />
-
-      {/* Debug info */}
       <PrivyWagmiDebug />
 
-      {/* helpful trace */}
       <div style={{ marginTop: 12 }}>
         <strong>Privy authenticated:</strong> {String(authenticated)}{" "}
         {user?.linkedAccounts ? `(linked: ${user.linkedAccounts.length})` : ""}
+      </div>
+
+      {/* ===== Integrate BalanceAndSend component here ===== */}
+      <div style={{ marginTop: 24 }}>
+        <BalanceAndSend
+          defaultTo="0xYourDestinationAddressHere"
+          defaultAmount="0.0001"
+        />
       </div>
     </div>
   );
