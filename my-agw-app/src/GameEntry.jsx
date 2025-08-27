@@ -8,25 +8,23 @@ import {
 } from "wagmi";
 import { parseEther } from "viem";
 import toast from "react-hot-toast";
+
+// Proper ABI import
 import contractJson from "./abi/WagerPoolSingleEntry.json";
 const abi = contractJson.abi;
 
-// Fallback contract address if environment variable is not set
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
 const ENTRY_FEE = parseEther("0.0001"); // 0.0001 ETH
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
 export default function GameEntry() {
-  // Debug environment variable
-  console.log("VITE_CONTRACT_ADDRESS:", import.meta.env.VITE_CONTRACT_ADDRESS);
-
   const { address, chainId, isConnected } = useAccount();
   const { switchChainAsync, isPending: switching } = useSwitchChain();
-  const [hasPaid, setHasPaid] = React.useState(null); // null = loading
+  const [hasPaid, setHasPaid] = React.useState(null);
 
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
 
-  // Debugging info
+  // Debug logs
   useEffect(() => {
     console.log("Wallet connected:", isConnected);
     console.log("Wallet address:", address);
@@ -34,8 +32,8 @@ export default function GameEntry() {
     console.log("Using contract address:", CONTRACT_ADDRESS);
   }, [isConnected, address, chainId]);
 
-  // Read from contract
-  const { data: onchainHasPaid, refetch: refetchHasPaid, isError, error } = useReadContract({
+  // Read player hasPaid
+  const { data: onchainHasPaid, refetch: refetchHasPaid, isError: hasPaidError, error: hasPaidErrorDetails } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,
     functionName: "hasPaid",
@@ -50,9 +48,26 @@ export default function GameEntry() {
     },
   });
 
+  // Read pool balance
+  const { data: poolDeposit, refetch: refetchPoolDeposit, isError: poolError, error: poolErrorDetails } = useReadContract({
+    abi,
+    address: CONTRACT_ADDRESS,
+    functionName: "poolBalance",
+    query: {
+      enabled: !!address && isCorrectChain,
+      retry: 3,
+    },
+    onError(err) {
+      console.error("Failed to read pool balance:", err);
+      toast.error("Failed to fetch pool balance: " + err.message);
+    },
+  });
+
+  // Transaction hooks
   const { data: txHash, isPending: txPending, sendTransaction, reset: resetSend } = useSendTransaction();
   const { data: receipt, isError: receiptError } = useWaitForTransactionReceipt({ hash: txHash });
 
+  // Ensure correct chain
   const ensureChain = async () => {
     if (!isConnected) {
       toast.error("Please connect your wallet.");
@@ -72,6 +87,7 @@ export default function GameEntry() {
     return true;
   };
 
+  // Handle join
   const handleJoin = async () => {
     console.log("Attempting to join game...");
     if (!isConnected || !address) {
@@ -104,26 +120,26 @@ export default function GameEntry() {
     }
   };
 
-  // Update hasPaid from contract
+  // Update hasPaid
   useEffect(() => {
     console.log("onchainHasPaid updated:", onchainHasPaid);
-    if (onchainHasPaid !== undefined) {
-      setHasPaid(onchainHasPaid);
-    }
+    if (onchainHasPaid !== undefined) setHasPaid(onchainHasPaid);
   }, [onchainHasPaid]);
 
-  // Handle transaction receipt
+  // Update after transaction receipt
   useEffect(() => {
     if (receipt) {
       console.log("Transaction confirmed:", receipt);
       refetchHasPaid();
+      refetchPoolDeposit();
       toast.success("Deposit confirmed! 0.0001 ETH paid.");
     } else if (receiptError) {
       console.error("Transaction failed:", receiptError);
       toast.error("Transaction failed. Please try again.");
     }
-  }, [receipt, receiptError, refetchHasPaid]);
+  }, [receipt, receiptError, refetchHasPaid, refetchPoolDeposit]);
 
+  // UI
   if (!isConnected) {
     return (
       <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
@@ -163,7 +179,7 @@ export default function GameEntry() {
       <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
         <h2>Game Entry</h2>
         <div>Loading player status... <span role="img" aria-label="spinner">⏳</span></div>
-        {isError && <div style={{ color: "red" }}>Error reading contract: {error?.message}</div>}
+        {hasPaidError && <div style={{ color: "red" }}>Error reading hasPaid: {hasPaidErrorDetails?.message}</div>}
       </div>
     );
   }
@@ -173,6 +189,10 @@ export default function GameEntry() {
       <h2>Game Entry</h2>
       <div style={{ marginBottom: 12 }}>
         <div><strong>Your address:</strong> {address}</div>
+        <div>
+          <strong>Current Pool Balance:</strong>{" "}
+          {poolDeposit !== undefined ? `${Number(poolDeposit) / 1e18} ETH` : "Loading..."}
+        </div>
       </div>
 
       <button
