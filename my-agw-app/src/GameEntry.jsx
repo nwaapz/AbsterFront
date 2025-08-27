@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   useAccount,
   useSendTransaction,
@@ -9,147 +9,154 @@ import {
 import { parseEther } from "viem";
 import toast from "react-hot-toast";
 
-// Proper ABI import
 import contractJson from "./abi/WagerPoolSingleEntry.json";
 const abi = contractJson.abi;
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
-const ENTRY_FEE = parseEther("0.0001"); // 0.0001 ETH
+const CONTRACT_ADDRESS =
+  import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
+const ENTRY_FEE = parseEther("0.0001");
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
 export default function GameEntry() {
   const { address, chainId, isConnected } = useAccount();
   const { switchChainAsync, isPending: switching } = useSwitchChain();
-  const [hasPaid, setHasPaid] = React.useState(null);
+  const [hasPaid, setHasPaid] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
 
-  // Debug logs
-  useEffect(() => {
-    console.log("Wallet connected:", isConnected);
-    console.log("Wallet address:", address);
-    console.log("Wallet chainId:", chainId, "isCorrectChain:", isCorrectChain);
-    console.log("Using contract address:", CONTRACT_ADDRESS);
-  }, [isConnected, address, chainId]);
-
-  // Read player hasPaid
-  const { data: onchainHasPaid, refetch: refetchHasPaid, isError: hasPaidError, error: hasPaidErrorDetails } = useReadContract({
+  // Read hasPaid from contract
+  const { data: onchainHasPaid, refetch: refetchHasPaid } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,
     functionName: "hasPaid",
     args: [address],
-    query: {
-      enabled: !!address && isCorrectChain,
-      retry: 3,
-    },
+    query: { enabled: !!address && isCorrectChain, retry: 3 },
     onError(err) {
       console.error("Contract read failed:", err);
-      toast.error("Failed to read player status: " + err.message);
+      toast.error(err.message);
     },
   });
 
   // Read pool balance
-  const { data: poolDeposit, refetch: refetchPoolDeposit, isError: poolError, error: poolErrorDetails } = useReadContract({
+  const { data: poolDeposit, refetch: refetchPoolDeposit } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,
     functionName: "poolBalance",
-    query: {
-      enabled: !!address && isCorrectChain,
-      retry: 3,
-    },
+    query: { enabled: !!address && isCorrectChain, retry: 3 },
     onError(err) {
       console.error("Failed to read pool balance:", err);
-      toast.error("Failed to fetch pool balance: " + err.message);
+      toast.error(err.message);
     },
   });
 
   // Transaction hooks
-  const { data: txHash, isPending: txPending, sendTransaction, reset: resetSend } = useSendTransaction();
-  const { data: receipt, isError: receiptError } = useWaitForTransactionReceipt({ hash: txHash });
+  const { data: txHash, sendTransaction, reset: resetSend } = useSendTransaction();
+  const { data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
 
-  // Ensure correct chain
+  // Update hasPaid state when contract changes
+  useEffect(() => {
+    if (onchainHasPaid !== undefined) {
+      setHasPaid(onchainHasPaid);
+      if (onchainHasPaid) setIsProcessing(false);
+    }
+  }, [onchainHasPaid]);
+
+  // Watch for confirmed transaction to start processing
+  useEffect(() => {
+    if (receipt) {
+      setIsProcessing(true); // enter Processing stage
+      refetchHasPaid();
+      refetchPoolDeposit();
+
+      const interval = setInterval(async () => {
+        try {
+          const paid = await refetchHasPaid();
+          if (paid?.data) {
+            setHasPaid(true);
+            setIsProcessing(false);
+            clearInterval(interval);
+          }
+        } catch (err) {
+          console.error("Error checking hasPaid:", err);
+        }
+      }, 2000);
+
+      return () => clearInterval(interval);
+    }
+  }, [receipt, refetchHasPaid, refetchPoolDeposit]);
+
+  // Refresh pool 5 seconds after round ends
+  useEffect(() => {
+    const handleRoundEnd = () => {
+      setTimeout(async () => {
+        const newPool = await refetchPoolDeposit();
+        console.log("Pool updated:", newPool?.data);
+      }, 5000);
+    };
+
+    window.addEventListener("roundEnded", handleRoundEnd);
+    return () => window.removeEventListener("roundEnded", handleRoundEnd);
+  }, [refetchPoolDeposit]);
+
+  // Ensure wallet and chain
   const ensureChain = async () => {
     if (!isConnected) {
-      toast.error("Please connect your wallet.");
+      toast.error("Connect wallet");
       return false;
     }
     if (!isCorrectChain) {
       try {
         await switchChainAsync({ chainId: ABSTRACT_TESTNET_CHAIN_ID });
-        console.log("Switched to Abstract Testnet");
         return true;
       } catch (err) {
-        console.error("Failed to switch chain:", err);
-        toast.error("Failed to switch to Abstract Testnet: " + err.message);
+        toast.error("Switch chain failed: " + err.message);
         return false;
       }
     }
     return true;
   };
 
-  // Handle join
+  // Handle Join button
   const handleJoin = async () => {
-    console.log("Attempting to join game...");
-    if (!isConnected || !address) {
-      toast.error("Please connect your wallet.");
-      return;
-    }
-    if (hasPaid === null) {
-      toast.error("Player status still loading...");
-      return;
-    }
-    if (hasPaid) {
-      toast.error("You have already paid.");
-      return;
-    }
+    if (!address) return toast.error("Connect wallet");
+    if (hasPaid) return toast.error("Already paid");
 
-    const chainSwitched = await ensureChain();
-    if (!chainSwitched) return;
+    const ok = await ensureChain();
+    if (!ok) return;
 
     resetSend();
+
     try {
-      const tx = await sendTransaction({
-        to: CONTRACT_ADDRESS,
-        value: ENTRY_FEE,
-      });
+      // Keep button as Join Game until payment confirmed
+      const tx = await sendTransaction({ to: CONTRACT_ADDRESS, value: ENTRY_FEE });
       console.log("Transaction sent:", tx);
       toast.success("Transaction sent! Awaiting confirmation...");
     } catch (err) {
-      console.error("Deposit failed:", err);
-      toast.error("Deposit failed: " + (err.message || "Unknown error"));
+      console.error("Payment failed or cancelled:", err);
+      toast.error("Payment cancelled or failed");
+      // button remains Join Game
     }
   };
 
-  // Update hasPaid
-  useEffect(() => {
-    console.log("onchainHasPaid updated:", onchainHasPaid);
-    if (onchainHasPaid !== undefined) setHasPaid(onchainHasPaid);
-  }, [onchainHasPaid]);
+  const buttonLabel = hasPaid
+    ? "Play Game ✅"
+    : isProcessing
+    ? "Processing Transaction..."
+    : "Join Game (0.0001 ETH)";
 
-  // Update after transaction receipt
-  useEffect(() => {
-    if (receipt) {
-      console.log("Transaction confirmed:", receipt);
-      refetchHasPaid();
-      refetchPoolDeposit();
-      toast.success("Deposit confirmed! 0.0001 ETH paid.");
-    } else if (receiptError) {
-      console.error("Transaction failed:", receiptError);
-      toast.error("Transaction failed. Please try again.");
-    }
-  }, [receipt, receiptError, refetchHasPaid, refetchPoolDeposit]);
+  const buttonDisabled = hasPaid || isProcessing || switching;
 
   // UI
-  if (!isConnected) {
+  if (!isConnected)
     return (
       <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
         <h2>Game Entry</h2>
         <div>Please connect your wallet.</div>
       </div>
     );
-  }
 
-  if (!isCorrectChain) {
+  if (!isCorrectChain)
     return (
       <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
         <h2>Game Entry</h2>
@@ -159,36 +166,20 @@ export default function GameEntry() {
         <button
           onClick={ensureChain}
           disabled={switching}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            backgroundColor: "#007bff",
-            color: "white",
-            cursor: switching ? "not-allowed" : "pointer",
-            marginTop: 10,
-          }}
+          style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8 }}
         >
           {switching ? "Switching..." : "Switch Network"}
         </button>
       </div>
     );
-  }
-
-  if (hasPaid === null) {
-    return (
-      <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-        <h2>Game Entry</h2>
-        <div>Loading player status... <span role="img" aria-label="spinner">⏳</span></div>
-        {hasPaidError && <div style={{ color: "red" }}>Error reading hasPaid: {hasPaidErrorDetails?.message}</div>}
-      </div>
-    );
-  }
 
   return (
     <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
       <h2>Game Entry</h2>
       <div style={{ marginBottom: 12 }}>
-        <div><strong>Your address:</strong> {address}</div>
+        <div>
+          <strong>Your address:</strong> {address}
+        </div>
         <div>
           <strong>Current Pool Balance:</strong>{" "}
           {poolDeposit !== undefined ? `${Number(poolDeposit) / 1e18} ETH` : "Loading..."}
@@ -197,34 +188,30 @@ export default function GameEntry() {
 
       <button
         onClick={handleJoin}
-        disabled={txPending || switching || hasPaid}
+        disabled={buttonDisabled}
         style={{
           padding: "8px 12px",
           borderRadius: 8,
           backgroundColor: hasPaid ? "#4CAF50" : "#007bff",
           color: "white",
-          cursor: hasPaid || txPending || switching ? "not-allowed" : "pointer",
+          cursor: buttonDisabled ? "not-allowed" : "pointer",
         }}
       >
-        {switching
-          ? "Switching Network..."
-          : txPending
-          ? "Processing Transaction..."
-          : hasPaid
-          ? "Play Game ✅"
-          : "Join Game (0.0001 ETH)"}
+        {buttonLabel}
       </button>
 
       {txHash && (
         <div style={{ marginTop: 10 }}>
-          <div><strong>Transaction Hash:</strong> {txHash}</div>
+          <div>
+            <strong>Transaction Hash:</strong> {txHash}
+          </div>
           <a
             href={`https://explorer.testnet.abs.xyz/tx/${txHash}`}
             target="_blank"
             rel="noreferrer"
             style={{ color: "#007bff" }}
           >
-            View on Abstract Testnet Explorer ↗
+            View on Explorer ↗
           </a>
         </div>
       )}
