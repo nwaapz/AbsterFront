@@ -1,5 +1,4 @@
-// src/GameEntry.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import {
   useAccount,
   useSendTransaction,
@@ -7,118 +6,203 @@ import {
   useSwitchChain,
   useReadContract,
 } from "wagmi";
-import abi from "./abi/WagerPoolSingleEntry.json";
+import { parseEther } from "viem";
+import toast from "react-hot-toast";
+import contractJson from "./abi/WagerPoolSingleEntry.json";
+const abi = contractJson.abi;
 
-const CONTRACT_ADDRESS = "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
-const ENTRY_FEE_WEI = 100_000_000_000_000n;
+// Fallback contract address if environment variable is not set
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
+const ENTRY_FEE = parseEther("0.0001"); // 0.0001 ETH
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
 export default function GameEntry() {
+  // Debug environment variable
+  console.log("VITE_CONTRACT_ADDRESS:", import.meta.env.VITE_CONTRACT_ADDRESS);
+
   const { address, chainId, isConnected } = useAccount();
   const { switchChainAsync, isPending: switching } = useSwitchChain();
+  const [hasPaid, setHasPaid] = React.useState(null); // null = loading
 
-  const [hasPaid, setHasPaid] = useState(null); // null = loading
-  const [optimisticPaid, setOptimisticPaid] = useState(false);
+  const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
 
-  // 🔹 Read from contract
-  const { data: onchainHasPaid, refetch: refetchHasPaid } = useReadContract({
-  abi: abi.abi, // <--- use abi.abi instead of full JSON
-  address: CONTRACT_ADDRESS,
-  functionName: "hasPaid",
-  args: address ? [address] : undefined,
-  query: { enabled: !!address && chainId === ABSTRACT_TESTNET_CHAIN_ID },
-  watch: true,
-});
+  // Debugging info
+  useEffect(() => {
+    console.log("Wallet connected:", isConnected);
+    console.log("Wallet address:", address);
+    console.log("Wallet chainId:", chainId, "isCorrectChain:", isCorrectChain);
+    console.log("Using contract address:", CONTRACT_ADDRESS);
+  }, [isConnected, address, chainId]);
 
+  // Read from contract
+  const { data: onchainHasPaid, refetch: refetchHasPaid, isError, error } = useReadContract({
+    abi,
+    address: CONTRACT_ADDRESS,
+    functionName: "hasPaid",
+    args: [address],
+    query: {
+      enabled: !!address && isCorrectChain,
+      retry: 3,
+    },
+    onError(err) {
+      console.error("Contract read failed:", err);
+      toast.error("Failed to read player status: " + err.message);
+    },
+  });
 
   const { data: txHash, isPending: txPending, sendTransaction, reset: resetSend } = useSendTransaction();
-  const { data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
+  const { data: receipt, isError: receiptError } = useWaitForTransactionReceipt({ hash: txHash });
 
   const ensureChain = async () => {
-    if (chainId !== ABSTRACT_TESTNET_CHAIN_ID && switchChainAsync) {
-      await switchChainAsync(ABSTRACT_TESTNET_CHAIN_ID);
+    if (!isConnected) {
+      toast.error("Please connect your wallet.");
+      return false;
     }
+    if (!isCorrectChain) {
+      try {
+        await switchChainAsync({ chainId: ABSTRACT_TESTNET_CHAIN_ID });
+        console.log("Switched to Abstract Testnet");
+        return true;
+      } catch (err) {
+        console.error("Failed to switch chain:", err);
+        toast.error("Failed to switch to Abstract Testnet: " + err.message);
+        return false;
+      }
+    }
+    return true;
   };
 
   const handleJoin = async () => {
-    if (!isConnected) return <div>Please connect your wallet.</div>;
-    if (!address || hasPaid === null) return <div>Loading player status...</div>;
-    if (hasPaid || optimisticPaid) return alert("You have already paid.");
+    console.log("Attempting to join game...");
+    if (!isConnected || !address) {
+      toast.error("Please connect your wallet.");
+      return;
+    }
+    if (hasPaid === null) {
+      toast.error("Player status still loading...");
+      return;
+    }
+    if (hasPaid) {
+      toast.error("You have already paid.");
+      return;
+    }
 
-    await ensureChain();
+    const chainSwitched = await ensureChain();
+    if (!chainSwitched) return;
 
-    resetSend?.();
+    resetSend();
     try {
-      // Optimistically mark as paid
-      setOptimisticPaid(true);
-      await sendTransaction({
+      const tx = await sendTransaction({
         to: CONTRACT_ADDRESS,
-        value: ENTRY_FEE_WEI,
+        value: ENTRY_FEE,
       });
+      console.log("Transaction sent:", tx);
+      toast.success("Transaction sent! Awaiting confirmation...");
     } catch (err) {
       console.error("Deposit failed:", err);
-      setOptimisticPaid(false);
-      alert("Deposit failed: " + (err?.message || err));
+      toast.error("Deposit failed: " + (err.message || "Unknown error"));
     }
   };
 
-  // 🔹 Update hasPaid from contract
+  // Update hasPaid from contract
   useEffect(() => {
-    console.log("DEBUG: onchainHasPaid =", onchainHasPaid);
+    console.log("onchainHasPaid updated:", onchainHasPaid);
     if (onchainHasPaid !== undefined) {
       setHasPaid(onchainHasPaid);
     }
   }, [onchainHasPaid]);
 
-  // 🔹 Refetch after transaction receipt
+  // Handle transaction receipt
   useEffect(() => {
     if (receipt) {
-      refetchHasPaid?.();
-      alert(`Deposit confirmed! 0.0001 ETH paid.`);
+      console.log("Transaction confirmed:", receipt);
+      refetchHasPaid();
+      toast.success("Deposit confirmed! 0.0001 ETH paid.");
+    } else if (receiptError) {
+      console.error("Transaction failed:", receiptError);
+      toast.error("Transaction failed. Please try again.");
     }
-  }, [receipt, refetchHasPaid]);
+  }, [receipt, receiptError, refetchHasPaid]);
 
-  if (!isConnected) return <div>Please connect your wallet.</div>;
+  if (!isConnected) {
+    return (
+      <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+        <h2>Game Entry</h2>
+        <div>Please connect your wallet.</div>
+      </div>
+    );
+  }
 
-  // Show loader while fetching
-  if (hasPaid === null) return <div>Loading player status...</div>;
+  if (!isCorrectChain) {
+    return (
+      <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+        <h2>Game Entry</h2>
+        <div style={{ color: "orange" }}>
+          Please switch to Abstract Testnet (Chain ID: {ABSTRACT_TESTNET_CHAIN_ID})
+        </div>
+        <button
+          onClick={ensureChain}
+          disabled={switching}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            backgroundColor: "#007bff",
+            color: "white",
+            cursor: switching ? "not-allowed" : "pointer",
+            marginTop: 10,
+          }}
+        >
+          {switching ? "Switching..." : "Switch Network"}
+        </button>
+      </div>
+    );
+  }
 
-  const paid = hasPaid || optimisticPaid;
+  if (hasPaid === null) {
+    return (
+      <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+        <h2>Game Entry</h2>
+        <div>Loading player status... <span role="img" aria-label="spinner">⏳</span></div>
+        {isError && <div style={{ color: "red" }}>Error reading contract: {error?.message}</div>}
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
       <h2>Game Entry</h2>
-
       <div style={{ marginBottom: 12 }}>
         <div><strong>Your address:</strong> {address}</div>
-        {chainId !== ABSTRACT_TESTNET_CHAIN_ID && (
-          <div style={{ color: "orange" }}>
-            Switch to Abstract Testnet (11124)
-          </div>
-        )}
       </div>
 
-      {paid ? (
-        <button style={{ padding: "8px 12px", borderRadius: 8 }}>
-          Play Game ✅
-        </button>
-      ) : (
-        <button
-          onClick={handleJoin}
-          disabled={txPending || switching}
-          style={{ padding: "8px 12px", borderRadius: 8 }}
-        >
-          {switching ? "Switching…" : txPending ? "Processing…" : `Join Game (0.0001 ETH)`}
-        </button>
-      )}
+      <button
+        onClick={handleJoin}
+        disabled={txPending || switching || hasPaid}
+        style={{
+          padding: "8px 12px",
+          borderRadius: 8,
+          backgroundColor: hasPaid ? "#4CAF50" : "#007bff",
+          color: "white",
+          cursor: hasPaid || txPending || switching ? "not-allowed" : "pointer",
+        }}
+      >
+        {switching
+          ? "Switching Network..."
+          : txPending
+          ? "Processing Transaction..."
+          : hasPaid
+          ? "Play Game ✅"
+          : "Join Game (0.0001 ETH)"}
+      </button>
 
       {txHash && (
         <div style={{ marginTop: 10 }}>
-          <div><strong>Tx Hash:</strong> {txHash}</div>
+          <div><strong>Transaction Hash:</strong> {txHash}</div>
           <a
             href={`https://explorer.testnet.abs.xyz/tx/${txHash}`}
             target="_blank"
             rel="noreferrer"
+            style={{ color: "#007bff" }}
           >
             View on Abstract Testnet Explorer ↗
           </a>
