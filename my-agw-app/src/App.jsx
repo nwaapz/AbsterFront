@@ -1,109 +1,59 @@
 // src/App.jsx
 import React from "react";
-import SyncPrivyToWagmi from "./SyncPrivyToWagmi.jsx";
-import WalletSelector from "./WalletSelector.jsx";
-import PrivyWagmiDebug from "./PrivyWagmiDebug.jsx";
-import ForceActivatePrivyWallet from "./ForceActivatePrivyWallet.jsx";
-import BalanceAndSend from "./BalanceAndSend.jsx";
 import GameEntry from "./GameEntry.jsx";
-
-import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
-import { usePrivy } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
+import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
 
 export default function App() {
+  const { address, status } = useAccount(); // Wagmi wallet
+  const { authenticated } = usePrivy();     // Abstract wallet
   const { login, link } = useAbstractPrivyLogin();
-  const { ready, authenticated, user } = usePrivy();
-  const { address, status } = useAccount();
 
-  // Unified handler: login or link
   const handleLoginOrLink = async () => {
-    if (!ready) {
-      alert("Privy not ready yet — wait a moment.");
-      return;
-    }
-
-    if (authenticated) {
+    if (!authenticated) {
+      try {
+        await login();
+      } catch (err) {
+        console.error("Login failed:", err);
+        alert("Login error: " + (err?.message || err));
+      }
+    } else {
       try {
         await link();
-        console.log("Linked AGW to existing Privy account.");
-        return;
       } catch (err) {
-        console.error("link() failed:", err);
-        alert("Link failed: " + (err?.message || err));
-        return;
-      }
-    }
-
-    try {
-      await login();
-      console.log("login() finished.");
-    } catch (err) {
-      console.warn("login() error:", err);
-      if (err?.message?.includes("already logged in")) {
-        try {
-          await link();
-        } catch (e) {
-          console.error("fallback link() failed:", e);
-          alert("Auth failure: " + (e?.message || e));
-        }
-      } else {
-        alert("Login error: " + (err?.message || err));
+        console.error("Link failed:", err);
+        alert("Link error: " + (err?.message || err));
       }
     }
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Abstract + Privy demo</h1>
+    <div style={{ padding: 24, maxWidth: 400, margin: "0 auto", fontFamily: "sans-serif" }}>
+      <h1>Game Portal</h1>
 
-      {/* Login / Link Buttons */}
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={handleLoginOrLink}>
-          {authenticated ? "Link Abstract Wallet" : "Login with Abstract"}
-        </button>
-        <button
-          onClick={async () => {
-            try {
-              await link();
-            } catch (e) {
-              console.error("Manual link() failed:", e);
-              alert("Link failed: " + (e?.message || e));
-            }
-          }}
-          style={{ marginLeft: 8 }}
-        >
-          Link Abstract (manual)
-        </button>
+      {/* Player address & connection state */}
+      <div style={{ marginBottom: 16 }}>
+        <div>
+          <strong>Wagmi Wallet Address:</strong> {address || "—"}
+        </div>
+        <div>
+          <strong>Connection Status:</strong> {status || "disconnected"} / {authenticated ? "Abstract linked ✅" : "Not linked ❌"}
+        </div>
+
+        {/* Show login/link button only if Abstract wallet not linked */}
+        {!authenticated && (
+          <button
+            onClick={handleLoginOrLink}
+            style={{ marginTop: 8, padding: "8px 12px", borderRadius: 6, backgroundColor: "#007bff", color: "white", cursor: "pointer" }}
+          >
+            Login with Abstract
+          </button>
+        )}
       </div>
 
-      {/* Wallet info */}
-      <div><strong>Wagmi status:</strong> {status}</div>
-      <div><strong>Wagmi address:</strong> {address || "—"}</div>
-
-      {/* Auto-sync and debugging */}
-      <SyncPrivyToWagmi />
-      <ForceActivatePrivyWallet />
-      <WalletSelector />
-      <PrivyWagmiDebug />
-
-      <div style={{ marginTop: 12 }}>
-        <strong>Privy authenticated:</strong> {String(authenticated)}{" "}
-        {user?.linkedAccounts ? `(linked: ${user.linkedAccounts.length})` : ""}
-      </div>
-
-      {/* Balance management */}
-      <div style={{ marginTop: 24 }}>
-        <BalanceAndSend
-          defaultTo="0xYourDestinationAddressHere"
-          defaultAmount="0.0001"
-        />
-      </div>
-
-      {/* Game entry / weekly payment */}
-      <div style={{ marginTop: 24 }}>
-        <GameEntry />
-      </div>
+      {/* Game Entry Button */}
+      <GameEntry />
     </div>
   );
 }
