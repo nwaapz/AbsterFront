@@ -26,9 +26,9 @@ export default function GameEntry() {
   const [score, setScore] = useState(0);
 
   const { authenticated, user } = usePrivy();
-
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
 
+  // --- Read contract ---
   const { data: onchainHasPaid, refetch: refetchHasPaid } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,
@@ -55,6 +55,7 @@ export default function GameEntry() {
   const { data: txHash, sendTransaction, reset: resetSend } = useSendTransaction();
   const { data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
 
+  // --- Update hasPaid on load ---
   useEffect(() => {
     if (onchainHasPaid !== undefined) {
       setHasPaid(onchainHasPaid);
@@ -62,11 +63,11 @@ export default function GameEntry() {
     }
   }, [onchainHasPaid]);
 
+  // --- Update after transaction ---
   useEffect(() => {
     if (receipt) {
       setIsProcessing(true);
-      refetchHasPaid();
-      refetchPoolDeposit();
+
       const interval = setInterval(async () => {
         try {
           const paid = await refetchHasPaid();
@@ -79,10 +80,12 @@ export default function GameEntry() {
           console.error("Error checking hasPaid:", err);
         }
       }, 2000);
+
       return () => clearInterval(interval);
     }
-  }, [receipt, refetchHasPaid, refetchPoolDeposit]);
+  }, [receipt, refetchHasPaid]);
 
+  // --- Chain check ---
   const ensureChain = async () => {
     if (!isConnected) {
       toast.error("Connect wallet");
@@ -100,6 +103,7 @@ export default function GameEntry() {
     return true;
   };
 
+  // --- Join / pay game ---
   const handleJoin = async () => {
     if (!address) return toast.error("Connect wallet");
     if (hasPaid) return toast.error("Already paid");
@@ -119,48 +123,39 @@ export default function GameEntry() {
     }
   };
 
-
+  // --- Get email from Privy ---
   const getEmail = () => {
-  if (!authenticated || !user) return null;
-  // Try linkedAccounts first
-  const account = user.linkedAccounts?.find(acc => acc.email);
-  return account?.email || null;
-};
-  // Submit score to backend
-const submitScore = async () => {
-  if (!address) return toast.error("Connect wallet");
-  console.log(getEmail());
-  console.log("Privy authenticated:", authenticated);
-  console.log("Privy user object:", user);
+    if (!authenticated || !user) return null;
+    const account = user.linkedAccounts?.find(acc => acc.email);
+    return account?.email || null;
+  };
 
-  const emailToSend = authenticated && user?.email ? user.email : null;
+  // --- Submit score ---
+  const submitScore = async () => {
+    if (!address) return toast.error("Connect wallet");
 
-  try {
-    const response = await fetch(
-      "https://apster-backend.onrender.com/api/submit-score",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user: address,
-          email: getEmail(), // may return null if no email linked
-          score,
-        }),
-      }
-    );
+    try {
+      const response = await fetch(
+        "https://apster-backend.onrender.com/api/submit-score",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user: address,
+            email: getEmail(),
+            score,
+          }),
+        }
+      );
 
-    const data = await response.json();
-    console.log("Submit response:", data);
-
-    if (data.ok) toast.success(`Score submitted: ${score}`);
-    else toast.error("Failed to submit score");
-  } catch (err) {
-    console.error("Submit error:", err);
-    toast.error("Error submitting score");
-  }
-};
-
-
+      const data = await response.json();
+      if (data.ok) toast.success(`Score submitted: ${score}`);
+      else toast.error("Failed to submit score");
+    } catch (err) {
+      console.error("Submit error:", err);
+      toast.error("Error submitting score");
+    }
+  };
 
   const buttonLabel = hasPaid
     ? "Play Game ✅"
@@ -169,7 +164,7 @@ const submitScore = async () => {
     : "Join Game (0.0001 ETH)";
   const buttonDisabled = hasPaid || isProcessing || switching;
 
-  // UI
+  // --- Render ---
   if (!isConnected)
     return (
       <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
@@ -222,21 +217,30 @@ const submitScore = async () => {
         {buttonLabel}
       </button>
 
-      <div style={{ marginTop: 16 }}>
-        <input
-          type="number"
-          value={score}
-          onChange={(e) => setScore(Number(e.target.value))}
-          placeholder="Enter your score"
-          style={{ marginRight: 8, padding: 4, width: 100 }}
-        />
-        <button
-          onClick={submitScore}
-          style={{ padding: "6px 12px", borderRadius: 6, cursor: "pointer" }}
-        >
-          Submit Score
-        </button>
-      </div>
+      {/* --- Show score input only after payment --- */}
+      {hasPaid && !isProcessing && (
+        <div style={{ marginTop: 16 }}>
+          <input
+            type="number"
+            value={score}
+            onChange={(e) => setScore(Number(e.target.value))}
+            placeholder="Enter your score"
+            style={{ marginRight: 8, padding: 4, width: 100 }}
+          />
+          <button
+            onClick={submitScore}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              cursor: "pointer",
+              backgroundColor: "#007bff",
+              color: "white",
+            }}
+          >
+            Submit Score
+          </button>
+        </div>
+      )}
 
       {txHash && (
         <div style={{ marginTop: 10 }}>
