@@ -1,3 +1,4 @@
+// front react   app.jsx
 import React, { useEffect, useState } from "react";
 import GameEntry from "./GameEntry.jsx";
 import { useAccount } from "wagmi";
