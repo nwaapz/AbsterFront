@@ -1,24 +1,27 @@
-# render.yaml for Unity WebGL + React with Brotli (nested folder workaround)
+# render.yaml for Unity WebGL with Gzip
 staticPublishPath: ./dist
 
 headers:
-  - path: /unity/Build/webBuild.data.br
+  # Unity data
+  - path: /unity/Build/*.data.unityweb
     name: Content-Encoding
-    value: br
-  - path: /unity/Build/webBuild.data.br
+    value: gzip
+  - path: /unity/Build/*.data.unityweb
     name: Content-Type
     value: application/octet-stream
 
-  - path: /unity/Build/webBuild.framework.js.br
+  # Unity framework JS
+  - path: /unity/Build/*.framework.js.unityweb
     name: Content-Encoding
-    value: br
-  - path: /unity/Build/webBuild.framework.js.br
+    value: gzip
+  - path: /unity/Build/*.framework.js.unityweb
     name: Content-Type
     value: application/javascript
 
-  - path: /unity/Build/webBuild.wasm.br
+  # Unity WebAssembly
+  - path: /unity/Build/*.wasm.unityweb
     name: Content-Encoding
-    value: br
-  - path: /unity/Build/webBuild.wasm.br
+    value: gzip
+  - path: /unity/Build/*.wasm.unityweb
     name: Content-Type
     value: application/wasm

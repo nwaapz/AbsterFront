@@ -125,60 +125,57 @@ export default function App() {
   }, [periodEnd]);
 
   // --- Load Unity WebGL loader and create instance ---
-  useEffect(() => {
-    // Adjust these paths to where you put your Unity build inside public/
-    // This example assumes you copied Unity build into public/unity/Build/
-    const loaderUrl = "/unity/Build/webBuild.loader.js";
-     // change if your build uses a different name
-    const config = {
-      dataUrl: "/unity/Build/webBuild.data.br",
-      frameworkUrl: "/unity/Build/webBuild.framework.js.br",
-      codeUrl: "/unity/Build/webBuild.wasm.br",
-      streamingAssetsUrl: "/unity/StreamingAssets",
-      companyName: "Company",
-      productName: "Product",
-      productVersion: "1.0",
-    };
+// --- Load Unity WebGL loader and create instance ---
+useEffect(() => {
+  // Adjust these paths to match your Unity build inside public/
+  // (they must match the filenames in /public/unity/Build/)
+  const loaderUrl = "/unity/Build/unity.loader.js";   // ✅ fix
 
-    // dynamic script load
-    const script = document.createElement("script");
-    script.src = loaderUrl;
-    script.async = true;
-    script.onload = () => {
-      try {
-        // createUnityInstance is provided by the Unity loader JS file
-        // keep a reference to the unityInstance so we can SendMessage later
-        window.createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
-          // optional: we could send progress to Unity or console
-          // sendUnityEvent("OnLoadProgress", { progress });
-        }).then((unityInstance) => {
+  const config = {
+    dataUrl: "/unity/Build/unity.data.unityweb",       // ✅ fix
+    frameworkUrl: "/unity/Build/unity.framework.js.unityweb",
+    codeUrl: "/unity/Build/unity.wasm.unityweb",
+    streamingAssetsUrl: "/unity/StreamingAssets",
+    companyName: "Company",
+    productName: "Product",
+    productVersion: "1.0",
+  };
+
+  const script = document.createElement("script");
+  script.src = loaderUrl;
+  script.async = true;
+  script.onload = () => {
+    try {
+      window
+        .createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
+          // optional progress callback
+        })
+        .then((unityInstance) => {
           window.unityInstance = unityInstance;
           unityRef.current = unityInstance;
-          // optional: set the global GameObject name Unity should use to receive messages
-          // window.unityGameObjectName = "JSBridge";
-          // initial push of state
           window.pushStateToUnity?.();
-        }).catch((e) => {
+        })
+        .catch((e) => {
           console.error("createUnityInstance failed", e);
         });
-      } catch (e) {
-        console.error("Error while creating unity instance", e);
-      }
-    };
-    script.onerror = (e) => {
-      console.error("Failed to load Unity loader script:", e, "loaderUrl:", loaderUrl);
-    };
-    document.body.appendChild(script);
+    } catch (e) {
+      console.error("Error while creating unity instance", e);
+    }
+  };
+  script.onerror = (e) => {
+    console.error("Failed to load Unity loader script:", e, "loaderUrl:", loaderUrl);
+  };
+  document.body.appendChild(script);
 
-    return () => {
-      // cleanup script and unity instance on unmount
-      if (window.unityInstance && typeof window.unityInstance.Quit === "function") {
-        window.unityInstance.Quit().catch(() => {});
-      }
-      document.body.removeChild(script);
-      delete window.unityInstance;
-    };
-  }, []); // run only once
+  return () => {
+    if (window.unityInstance && typeof window.unityInstance.Quit === "function") {
+      window.unityInstance.Quit().catch(() => {});
+    }
+    document.body.removeChild(script);
+    delete window.unityInstance;
+  };
+}, []); // run only once
+ // run only once
 
   // Render only Unity canvas container — no visible React UI
   return (
