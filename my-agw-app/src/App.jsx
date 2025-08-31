@@ -12,15 +12,14 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(0); // ms
   const [periodEnd, setPeriodEnd] = useState(null); // timestamp ms
 
-  // ref for unity instance set when loader finishes
   const unityRef = useRef(null);
+  const [unityLoaded, setUnityLoaded] = useState(false); // track if Unity is ready
 
-  // Fetch initial period from backend
+  // --- Fetch period from backend ---
   const fetchPeriod = async () => {
     try {
       const res = await fetch("https://apster-backend.onrender.com/api/period");
       const data = await res.json();
-      // ensure periodEnd is timestamp in ms
       setPeriodEnd(Number(data.periodEnd));
     } catch (err) {
       console.error("Failed to fetch period:", err);
@@ -31,7 +30,7 @@ export default function App() {
     fetchPeriod();
   }, []);
 
-  // Countdown interval
+  // --- Countdown timer ---
   useEffect(() => {
     if (!periodEnd) return;
     const interval = setInterval(() => {
@@ -39,8 +38,7 @@ export default function App() {
       const left = periodEnd - now;
       if (left <= 0) {
         setTimeLeft(0);
-        // re-fetch next round shortly
-        setTimeout(fetchPeriod, 1000);
+        setTimeout(fetchPeriod, 1000); // re-fetch next round
       } else {
         setTimeLeft(left);
       }
@@ -48,58 +46,52 @@ export default function App() {
     return () => clearInterval(interval);
   }, [periodEnd]);
 
-  // helper to send events to Unity
+  // --- Helper to send events to Unity ---
   const sendUnityEvent = (method, payload = "") => {
     try {
-      // you can set a different GameObject name in window.unityGameObjectName if desired
       const go = window.unityGameObjectName || "JSBridge";
       if (window.unityInstance && typeof window.unityInstance.SendMessage === "function") {
-        window.unityInstance.SendMessage(go, method, typeof payload === "string" ? payload : JSON.stringify(payload));
+        window.unityInstance.SendMessage(
+          go,
+          method,
+          typeof payload === "string" ? payload : JSON.stringify(payload)
+        );
       }
     } catch (e) {
       console.warn("sendUnityEvent failed", e);
     }
   };
 
-  // expose functions on window so Unity can call them
+  // --- Expose functions for Unity to call ---
   useEffect(() => {
-    // Auth function callable from Unity
     window.loginWithAbstract = async () => {
       try {
-        if (!authenticated) {
-          await login();
-        } else {
-          await link();
-        }
-        // send current auth state after operation (Unity can react)
-        sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null, success: true });
+        if (!authenticated) await login();
+        else await link();
+        sendUnityEvent("OnAuthChanged", {
+          authenticated: Boolean(authenticated),
+          address: address || null,
+          success: true,
+        });
       } catch (err) {
         console.error("Auth failed:", err);
         sendUnityEvent("OnAuthChanged", { success: false, error: err?.message || String(err) });
       }
     };
 
-    // simple getters
     window.getWalletAddress = () => address || "";
     window.isAuthenticated = () => Boolean(authenticated);
     window.getTimeLeftMs = () => timeLeft;
     window.getPeriodEndMs = () => periodEnd || 0;
-
-    // allow Unity to request a manual reload of period
     window.fetchPeriodFromReact = () => fetchPeriod();
-
-    // helper Unity can call to request React send latest state immediately
     window.pushStateToUnity = () => {
       sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
       sendUnityEvent("OnTimeLeftChanged", { timeLeft });
       sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
     };
-
-    // make sendUnityEvent available globally if Unity needs it
     window.sendUnityEvent = sendUnityEvent;
 
     return () => {
-      // cleanup
       delete window.loginWithAbstract;
       delete window.getWalletAddress;
       delete window.isAuthenticated;
@@ -111,73 +103,60 @@ export default function App() {
     };
   }, [authenticated, address, login, link, timeLeft, periodEnd]);
 
-  // Notify Unity whenever important state changes
+  // --- Notify Unity when state changes ---
+  useEffect(() => sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null }), [authenticated, address]);
+  useEffect(() => sendUnityEvent("OnTimeLeftChanged", { timeLeft }), [timeLeft]);
+  useEffect(() => sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 }), [periodEnd]);
+
+  // --- Load Unity WebGL ---
   useEffect(() => {
-    sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
-  }, [authenticated, address]);
+    const loaderUrl = "/unity/Build/unity.loader.js";
 
-  useEffect(() => {
-    sendUnityEvent("OnTimeLeftChanged", { timeLeft });
-  }, [timeLeft]);
+    const config = {
+      dataUrl: "/unity/Build/unity.data.unityweb",
+      frameworkUrl: "/unity/Build/unity.framework.js.unityweb",
+      codeUrl: "/unity/Build/unity.wasm.unityweb",
+      streamingAssetsUrl: "/unity/StreamingAssets",
+      companyName: "Company",
+      productName: "Product",
+      productVersion: "1.0",
+    };
 
-  useEffect(() => {
-    sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
-  }, [periodEnd]);
+    const script = document.createElement("script");
+    script.src = loaderUrl;
+    script.async = true;
 
-  // --- Load Unity WebGL loader and create instance ---
-// --- Load Unity WebGL loader and create instance ---
-useEffect(() => {
-  // Adjust these paths to match your Unity build inside public/
-  // (they must match the filenames in /public/unity/Build/)
-  const loaderUrl = "/unity/Build/unity.loader.js";   // ✅ fix
+    script.onload = () => {
+      try {
+        window
+          .createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
+            // Optional: use progress to show a loading bar
+          })
+          .then((unityInstance) => {
+            window.unityInstance = unityInstance;
+            unityRef.current = unityInstance;
+            window.pushStateToUnity?.();
+            setUnityLoaded(true); // hide logo overlay
+          })
+          .catch((e) => console.error("createUnityInstance failed", e));
+      } catch (e) {
+        console.error("Error while creating unity instance", e);
+      }
+    };
 
-  const config = {
-    dataUrl: "/unity/Build/unity.data.unityweb",       // ✅ fix
-    frameworkUrl: "/unity/Build/unity.framework.js.unityweb",
-    codeUrl: "/unity/Build/unity.wasm.unityweb",
-    streamingAssetsUrl: "/unity/StreamingAssets",
-    companyName: "Company",
-    productName: "Product",
-    productVersion: "1.0",
-  };
+    script.onerror = (e) => console.error("Failed to load Unity loader script:", e);
+    document.body.appendChild(script);
 
-  const script = document.createElement("script");
-  script.src = loaderUrl;
-  script.async = true;
-  script.onload = () => {
-    try {
-      window
-        .createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
-          // optional progress callback
-        })
-        .then((unityInstance) => {
-          window.unityInstance = unityInstance;
-          unityRef.current = unityInstance;
-          window.pushStateToUnity?.();
-        })
-        .catch((e) => {
-          console.error("createUnityInstance failed", e);
-        });
-    } catch (e) {
-      console.error("Error while creating unity instance", e);
-    }
-  };
-  script.onerror = (e) => {
-    console.error("Failed to load Unity loader script:", e, "loaderUrl:", loaderUrl);
-  };
-  document.body.appendChild(script);
+    return () => {
+      if (window.unityInstance && typeof window.unityInstance.Quit === "function") {
+        window.unityInstance.Quit().catch(() => {});
+      }
+      document.body.removeChild(script);
+      delete window.unityInstance;
+    };
+  }, []);
 
-  return () => {
-    if (window.unityInstance && typeof window.unityInstance.Quit === "function") {
-      window.unityInstance.Quit().catch(() => {});
-    }
-    document.body.removeChild(script);
-    delete window.unityInstance;
-  };
-}, []); // run only once
- // run only once
-
-  // Render only Unity canvas container — no visible React UI
+  // --- Render ---
   return (
     <div
       id="unity-container"
@@ -187,14 +166,43 @@ useEffect(() => {
         margin: 0,
         padding: 0,
         overflow: "hidden",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
+        position: "relative",
         background: "#000",
       }}
     >
-      {/* Unity will attach to this canvas via createUnityInstance */}
+      {/* Unity Canvas */}
       <canvas id="unity-canvas" style={{ width: "100%", height: "100%" }} />
+
+      {/* Overlay Logo */}
+      {!unityLoaded && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "#000",
+            zIndex: 10,
+          }}
+        >
+          <img
+            src="/logo.png"
+            alt="Loading..."
+            style={{ width: "200px", animation: "spin 2s linear infinite" }}
+          />
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
