@@ -1,8 +1,7 @@
-# render.yaml for Unity WebGL + React + Brotli
+# render.yaml for Unity WebGL + React with Brotli (nested folder workaround)
 staticPublishPath: ./dist
 
 headers:
-  # Unity .data.br files
   - path: /unity/Build/webBuild.data.br
     name: Content-Encoding
     value: br
@@ -10,7 +9,6 @@ headers:
     name: Content-Type
     value: application/octet-stream
 
-  # Unity .framework.js.br files
   - path: /unity/Build/webBuild.framework.js.br
     name: Content-Encoding
     value: br
@@ -18,21 +16,9 @@ headers:
     name: Content-Type
     value: application/javascript
 
-  # Unity .wasm.br files
   - path: /unity/Build/webBuild.wasm.br
     name: Content-Encoding
     value: br
   - path: /unity/Build/webBuild.wasm.br
     name: Content-Type
     value: application/wasm
-
-  # Optional: if you have other Unity files that are Brotli-compressed
-  - path: /unity/Build/*.data.br
-    name: Content-Encoding
-    value: br
-  - path: /unity/Build/*.framework.js.br
-    name: Content-Encoding
-    value: br
-  - path: /unity/Build/*.wasm.br
-    name: Content-Encoding
-    value: br
