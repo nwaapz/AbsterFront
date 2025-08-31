@@ -4,10 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "build": "npm run build:app",
+    "build:app": "vite build",
+    "start": "node express-static-br.js"
   },
   "dependencies": {
     "@abstract-foundation/agw-client": "^1.9.0",
@@ -16,6 +15,8 @@
     "@privy-io/wagmi": "^1.0.6",
     "@tanstack/react-query": "^5.85.5",
     "ethers": "^6.15.0",
+    "express": "^5.1.0",
+    "mime": "^4.0.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-hot-toast": "^2.6.0",
