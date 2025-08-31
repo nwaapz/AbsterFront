@@ -1,15 +1,21 @@
 staticPublishPath: ./dist
 
 headers:
-  - path: /*.wasm
+  - path: /unity/Build/*.data.br
+    name: Content-Encoding
+    value: br
+  - path: /unity/Build/*.data.br
+    name: Content-Type
+    value: application/octet-stream
+  - path: /unity/Build/*.framework.js.br
+    name: Content-Encoding
+    value: br
+  - path: /unity/Build/*.framework.js.br
+    name: Content-Type
+    value: application/javascript
+  - path: /unity/Build/*.wasm.br
+    name: Content-Encoding
+    value: br
+  - path: /unity/Build/*.wasm.br
     name: Content-Type
     value: application/wasm
-  - path: /*.data.br
-    name: Content-Encoding
-    value: br
-  - path: /*.framework.js.br
-    name: Content-Encoding
-    value: br
-  - path: /*.wasm.br
-    name: Content-Encoding
-    value: br
