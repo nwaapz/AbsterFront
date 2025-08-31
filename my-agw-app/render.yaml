@@ -1,0 +1,15 @@
+staticPublishPath: ./dist
+
+headers:
+  - path: /*.wasm
+    name: Content-Type
+    value: application/wasm
+  - path: /*.data.br
+    name: Content-Encoding
+    value: br
+  - path: /*.framework.js.br
+    name: Content-Encoding
+    value: br
+  - path: /*.wasm.br
+    name: Content-Encoding
+    value: br
