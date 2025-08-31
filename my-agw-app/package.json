@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "npm run build:app",
-    "build:app": "vite build",
-    "start": "node express-static-br.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@abstract-foundation/agw-client": "^1.9.0",
@@ -15,18 +15,16 @@
     "@privy-io/wagmi": "^1.0.6",
     "@tanstack/react-query": "^5.85.5",
     "ethers": "^6.15.0",
-    "express": "^5.1.0",
-    "mime": "^4.0.7",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "react-hot-toast": "^2.6.0",
     "viem": "^2.35.1",
     "wagmi": "^2.16.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
-    "@types/react": "^19.1.10",
-    "@types/react-dom": "^19.1.7",
+    "@types/react": "^18.2.7",
+    "@types/react-dom": "^18.2.4",
     "@vitejs/plugin-react": "^5.0.0",
     "eslint": "^9.33.0",
     "eslint-plugin-react-hooks": "^5.2.0",
