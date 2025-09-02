@@ -113,9 +113,9 @@ export default function App() {
     const loaderUrl = "/unity/Build/unity.loader.js";
 
     const config = {
-      dataUrl: "/unity/Build/unity.data.unityweb",
-      frameworkUrl: "/unity/Build/unity.framework.js.unityweb",
-      codeUrl: "/unity/Build/unity.wasm.unityweb",
+      dataUrl: "/unity/Build/unity.data.br",
+      frameworkUrl: "/unity/Build/unity.framework.js.br",
+      codeUrl: "/unity/Build/unity.wasm.br",
       streamingAssetsUrl: "/unity/StreamingAssets",
       companyName: "Company",
       productName: "Product",
