@@ -1,27 +1,35 @@
-# render.yaml for Unity WebGL with Gzip
 staticPublishPath: ./dist
 
 headers:
-  # Unity data
-  - path: /unity/Build/*.data.unityweb
-    name: Content-Encoding
-    value: gzip
+  # Unity Data files
   - path: /unity/Build/*.data.unityweb
     name: Content-Type
     value: application/octet-stream
-
-  # Unity framework JS
-  - path: /unity/Build/*.framework.js.unityweb
+  - path: /unity/Build/*.data.unityweb
     name: Content-Encoding
     value: gzip
+  - path: /unity/Build/*.data.unityweb
+    name: Cache-Control
+    value: public, max-age=31536000, immutable
+
+  # Unity Framework JS
   - path: /unity/Build/*.framework.js.unityweb
     name: Content-Type
     value: application/javascript
+  - path: /unity/Build/*.framework.js.unityweb
+    name: Content-Encoding
+    value: gzip
+  - path: /unity/Build/*.framework.js.unityweb
+    name: Cache-Control
+    value: public, max-age=31536000, immutable
 
   # Unity WebAssembly
+  - path: /unity/Build/*.wasm.unityweb
+    name: Content-Type
+    value: application/wasm
   - path: /unity/Build/*.wasm.unityweb
     name: Content-Encoding
     value: gzip
   - path: /unity/Build/*.wasm.unityweb
-    name: Content-Type
-    value: application/wasm
+    name: Cache-Control
+    value: public, max-age=31536000, immutable
