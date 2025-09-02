@@ -1,35 +1,57 @@
 staticPublishPath: ./dist
 
 headers:
-  # Unity Data files
-  - path: /unity/Build/*.data.unityweb
+  # Unity Data files (Brotli compressed)
+  - path: /Build/*.data.br
     name: Content-Type
     value: application/octet-stream
-  - path: /unity/Build/*.data.unityweb
+  - path: /Build/*.data.br
     name: Content-Encoding
-    value: gzip
-  - path: /unity/Build/*.data.unityweb
+    value: br
+  - path: /Build/*.data.br
     name: Cache-Control
     value: public, max-age=31536000, immutable
 
-  # Unity Framework JS
-  - path: /unity/Build/*.framework.js.unityweb
+  # Unity Framework JS (Brotli compressed)
+  - path: /Build/*.framework.js.br
     name: Content-Type
     value: application/javascript
-  - path: /unity/Build/*.framework.js.unityweb
+  - path: /Build/*.framework.js.br
     name: Content-Encoding
-    value: gzip
-  - path: /unity/Build/*.framework.js.unityweb
+    value: br
+  - path: /Build/*.framework.js.br
     name: Cache-Control
     value: public, max-age=31536000, immutable
 
-  # Unity WebAssembly
-  - path: /unity/Build/*.wasm.unityweb
+  # Unity WebAssembly (Brotli compressed)
+  - path: /Build/*.wasm.br
     name: Content-Type
     value: application/wasm
-  - path: /unity/Build/*.wasm.unityweb
+  - path: /Build/*.wasm.br
     name: Content-Encoding
-    value: gzip
-  - path: /unity/Build/*.wasm.unityweb
+    value: br
+  - path: /Build/*.wasm.br
+    name: Cache-Control
+    value: public, max-age=31536000, immutable
+
+  # Fallback for uncompressed files (if any)
+  - path: /Build/*.data
+    name: Content-Type
+    value: application/octet-stream
+  - path: /Build/*.data
+    name: Cache-Control
+    value: public, max-age=31536000, immutable
+
+  - path: /Build/*.framework.js
+    name: Content-Type
+    value: application/javascript
+  - path: /Build/*.framework.js
+    name: Cache-Control
+    value: public, max-age=31536000, immutable
+
+  - path: /Build/*.wasm
+    name: Content-Type
+    value: application/wasm
+  - path: /Build/*.wasm
     name: Cache-Control
     value: public, max-age=31536000, immutable
