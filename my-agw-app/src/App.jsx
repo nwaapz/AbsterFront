@@ -56,28 +56,26 @@ export default function App() {
     return () => clearInterval(interval);
   }, [periodEnd]);
 
+  // Define sendToUnity function for React-to-Unity communication
+  const sendToUnity = useCallback((messageType, data) => {
+    console.log("React -> Unity:", messageType, data);
+    if (window.unityInstance && typeof window.unityInstance.SendMessage === 'function') {
+      window.unityInstance.SendMessage('JSBridge', messageType, data);
+    } else {
+      console.warn("Unity instance not ready for message:", messageType);
+    }
+  }, []);
+
   // Helper to send events to Unity - only when loaded
-  const sendUnityEvent = (method, payload = "") => {
-    if (!unityLoaded) return; // Don't send if Unity isn't ready
+  const sendUnityEvent = useCallback((method, payload = "") => {
+    if (!unityLoaded) return;
     
     try {
-      // Use the bridge function if available, otherwise fall back to direct communication
-      if (window.sendToUnity) {
-        window.sendToUnity(method, typeof payload === "string" ? payload : JSON.stringify(payload));
-      } else {
-        const go = window.unityGameObjectName || "JSBridge";
-        if (window.unityInstance && typeof window.unityInstance.SendMessage === "function") {
-          window.unityInstance.SendMessage(
-            go,
-            method,
-            typeof payload === "string" ? payload : JSON.stringify(payload)
-          );
-        }
-      }
+      sendToUnity(method, typeof payload === "string" ? payload : JSON.stringify(payload));
     } catch (e) {
       console.warn("sendUnityEvent failed", e);
     }
-  };
+  }, [unityLoaded, sendToUnity]);
 
   // Define the message handler for Unity-to-React communication
   const handleMessageFromUnity = useCallback((messageType, data) => {
@@ -147,6 +145,9 @@ export default function App() {
     // Define the message handler for Unity
     window.handleMessageFromUnity = handleMessageFromUnity;
 
+    // Expose sendToUnity for other components to use
+    window.sendToUnity = sendToUnity;
+
     return () => {
       delete window.loginWithAbstract;
       delete window.getWalletAddress;
@@ -156,27 +157,28 @@ export default function App() {
       delete window.fetchPeriodFromReact;
       delete window.pushStateToUnity;
       delete window.handleMessageFromUnity;
+      delete window.sendToUnity;
     };
-  }, [authenticated, address, login, link, timeLeft, periodEnd, unityLoaded, handleMessageFromUnity]);
+  }, [authenticated, address, login, link, timeLeft, periodEnd, unityLoaded, handleMessageFromUnity, sendToUnity, sendUnityEvent]);
 
   // Notify Unity when state changes - only when loaded
   useEffect(() => {
     if (unityLoaded) {
       sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
     }
-  }, [authenticated, address, unityLoaded]);
+  }, [authenticated, address, unityLoaded, sendUnityEvent]);
   
   useEffect(() => {
     if (unityLoaded) {
       sendUnityEvent("OnTimeLeftChanged", { timeLeft });
     }
-  }, [timeLeft, unityLoaded]);
+  }, [timeLeft, unityLoaded, sendUnityEvent]);
   
   useEffect(() => {
     if (unityLoaded) {
       sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
     }
-  }, [periodEnd, unityLoaded]);
+  }, [periodEnd, unityLoaded, sendUnityEvent]);
 
   // Load Unity WebGL
   useEffect(() => {
