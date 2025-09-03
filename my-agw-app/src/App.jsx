@@ -1,21 +1,31 @@
-// App.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
+import GameEntry from "./GameEntry";
+import BalanceAndSend from "./BalanceAndSend";
 
 export default function App() {
-  const { address, status } = useAccount();
-  const { authenticated } = usePrivy();
+  const { address, status, isConnected, chainId } = useAccount();
+  const { authenticated, user } = usePrivy();
   const { login, link } = useAbstractPrivyLogin();
 
-  const [timeLeft, setTimeLeft] = useState(0); // ms
-  const [periodEnd, setPeriodEnd] = useState(null); // timestamp ms
-
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [periodEnd, setPeriodEnd] = useState(null);
   const unityRef = useRef(null);
-  const [unityLoaded, setUnityLoaded] = useState(false); // track if Unity is ready
+  const [unityLoaded, setUnityLoaded] = useState(false);
 
-  // --- Fetch period from backend ---
+  // Single source of truth for connection state
+  const connectionState = {
+    address,
+    status,
+    isConnected,
+    chainId,
+    authenticated,
+    user
+  };
+
+  // Fetch period from backend
   const fetchPeriod = async () => {
     try {
       const res = await fetch("https://apster-backend.onrender.com/api/period");
@@ -30,7 +40,7 @@ export default function App() {
     fetchPeriod();
   }, []);
 
-  // --- Countdown timer ---
+  // Countdown timer
   useEffect(() => {
     if (!periodEnd) return;
     const interval = setInterval(() => {
@@ -38,7 +48,7 @@ export default function App() {
       const left = periodEnd - now;
       if (left <= 0) {
         setTimeLeft(0);
-        setTimeout(fetchPeriod, 1000); // re-fetch next round
+        setTimeout(fetchPeriod, 1000);
       } else {
         setTimeLeft(left);
       }
@@ -46,23 +56,65 @@ export default function App() {
     return () => clearInterval(interval);
   }, [periodEnd]);
 
-  // --- Helper to send events to Unity ---
+  // Helper to send events to Unity - only when loaded
   const sendUnityEvent = (method, payload = "") => {
+    if (!unityLoaded) return; // Don't send if Unity isn't ready
+    
     try {
-      const go = window.unityGameObjectName || "JSBridge";
-      if (window.unityInstance && typeof window.unityInstance.SendMessage === "function") {
-        window.unityInstance.SendMessage(
-          go,
-          method,
-          typeof payload === "string" ? payload : JSON.stringify(payload)
-        );
+      // Use the bridge function if available, otherwise fall back to direct communication
+      if (window.sendToUnity) {
+        window.sendToUnity(method, typeof payload === "string" ? payload : JSON.stringify(payload));
+      } else {
+        const go = window.unityGameObjectName || "JSBridge";
+        if (window.unityInstance && typeof window.unityInstance.SendMessage === "function") {
+          window.unityInstance.SendMessage(
+            go,
+            method,
+            typeof payload === "string" ? payload : JSON.stringify(payload)
+          );
+        }
       }
     } catch (e) {
       console.warn("sendUnityEvent failed", e);
     }
   };
 
-  // --- Expose functions for Unity to call ---
+  // Define the message handler for Unity-to-React communication
+  const handleMessageFromUnity = useCallback((messageType, data) => {
+    console.log("React received message from Unity:", messageType, data);
+    
+    // Handle different message types from Unity
+    switch(messageType) {
+      case "AddTwelve":
+        const number = parseInt(data);
+        const result = number + 12;
+        console.log(`Adding 12 to ${number} = ${result}`);
+        
+        // Send the result back to Unity
+        sendUnityEvent("OnAddTwelveResult", result.toString());
+        break;
+        
+      case "RequestAuthState":
+        // Send current auth state to Unity
+        sendUnityEvent("OnAuthChanged", { 
+          authenticated: Boolean(authenticated), 
+          address: address || null 
+        });
+        break;
+        
+      case "RequestGameState":
+        // Send game state to Unity
+        sendUnityEvent("OnTimeLeftChanged", { timeLeft });
+        sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
+        break;
+        
+      // Add more cases for other message types as needed
+      default:
+        console.log("Unknown message type from Unity:", messageType);
+    }
+  }, [authenticated, address, timeLeft, periodEnd, sendUnityEvent]);
+
+  // Expose functions for Unity to call
   useEffect(() => {
     window.loginWithAbstract = async () => {
       try {
@@ -85,11 +137,15 @@ export default function App() {
     window.getPeriodEndMs = () => periodEnd || 0;
     window.fetchPeriodFromReact = () => fetchPeriod();
     window.pushStateToUnity = () => {
+      if (!unityLoaded) return;
+      console.log("Unity is asking for state");
       sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
       sendUnityEvent("OnTimeLeftChanged", { timeLeft });
       sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
     };
-    window.sendUnityEvent = sendUnityEvent;
+    
+    // Define the message handler for Unity
+    window.handleMessageFromUnity = handleMessageFromUnity;
 
     return () => {
       delete window.loginWithAbstract;
@@ -99,19 +155,32 @@ export default function App() {
       delete window.getPeriodEndMs;
       delete window.fetchPeriodFromReact;
       delete window.pushStateToUnity;
-      delete window.sendUnityEvent;
+      delete window.handleMessageFromUnity;
     };
-  }, [authenticated, address, login, link, timeLeft, periodEnd]);
+  }, [authenticated, address, login, link, timeLeft, periodEnd, unityLoaded, handleMessageFromUnity]);
 
-  // --- Notify Unity when state changes ---
-  useEffect(() => sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null }), [authenticated, address]);
-  useEffect(() => sendUnityEvent("OnTimeLeftChanged", { timeLeft }), [timeLeft]);
-  useEffect(() => sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 }), [periodEnd]);
+  // Notify Unity when state changes - only when loaded
+  useEffect(() => {
+    if (unityLoaded) {
+      sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
+    }
+  }, [authenticated, address, unityLoaded]);
+  
+  useEffect(() => {
+    if (unityLoaded) {
+      sendUnityEvent("OnTimeLeftChanged", { timeLeft });
+    }
+  }, [timeLeft, unityLoaded]);
+  
+  useEffect(() => {
+    if (unityLoaded) {
+      sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
+    }
+  }, [periodEnd, unityLoaded]);
 
-  // --- Load Unity WebGL ---
+  // Load Unity WebGL
   useEffect(() => {
     const loaderUrl = "/Build/public.loader.js";
-
     const config = {
       dataUrl: "/Build/public.data.br",
       frameworkUrl: "/Build/public.framework.js.br",
@@ -135,8 +204,8 @@ export default function App() {
           .then((unityInstance) => {
             window.unityInstance = unityInstance;
             unityRef.current = unityInstance;
+            setUnityLoaded(true);
             window.pushStateToUnity?.();
-            setUnityLoaded(true); // hide logo overlay
           })
           .catch((e) => console.error("createUnityInstance failed", e));
       } catch (e) {
@@ -156,7 +225,6 @@ export default function App() {
     };
   }, []);
 
-  // --- Render ---
   return (
     <div
       id="unity-container"
@@ -170,10 +238,8 @@ export default function App() {
         background: "#000",
       }}
     >
-      {/* Unity Canvas */}
       <canvas id="unity-canvas" style={{ width: "100%", height: "100%" }} />
 
-      {/* Overlay Logo */}
       {!unityLoaded && (
         <div
           style={{
@@ -192,15 +258,36 @@ export default function App() {
           <img
             src="/logo.png"
             alt="Loading..."
-            style={{ width: "200px", animation: "spin 2s linear infinite" }}
+            style={{ 
+              width: "200px", 
+              animation: "pulse 1.5s ease-in-out infinite both" 
+            }}
           />
         </div>
       )}
 
+      {/* Render child components and pass connection state */}
+      {unityLoaded && (
+        <>
+          <GameEntry connectionState={connectionState} />
+          <BalanceAndSend connectionState={connectionState} />
+        </>
+      )}
+
       <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+        @keyframes pulse {
+          0% {
+            transform: scale(0.9);
+            opacity: 0.7;
+          }
+          50% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(0.9);
+            opacity: 0.7;
+          }
         }
       `}</style>
     </div>

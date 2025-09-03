@@ -1,7 +1,6 @@
-// GameEntry.jsx
+//GameEntry.jsx
 import React, { useEffect, useState } from "react";
 import {
-  useAccount,
   useSendTransaction,
   useWaitForTransactionReceipt,
   useSwitchChain,
@@ -9,7 +8,6 @@ import {
 } from "wagmi";
 import { parseEther } from "viem";
 import toast from "react-hot-toast";
-import { usePrivy } from "@privy-io/react-auth";
 import contractJson from "./abi/WagerPoolSingleEntry.json";
 const abi = contractJson.abi;
 
@@ -18,17 +16,18 @@ const CONTRACT_ADDRESS =
 const ENTRY_FEE = parseEther("0.0001");
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
-export default function GameEntry() {
-  const { address, chainId, isConnected } = useAccount();
+export default function GameEntry({ connectionState }) {
+  // Use connection state from props instead of hooks
+  const { address, isConnected, chainId, authenticated, user } = connectionState;
+  
   const { switchChainAsync, isPending: switching } = useSwitchChain();
   const [hasPaid, setHasPaid] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [score, setScore] = useState(0);
 
-  const { authenticated, user } = usePrivy();
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
 
-  // --- Read contract ---
+  // Read contract - now uses address from props
   const { data: onchainHasPaid, refetch: refetchHasPaid } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,

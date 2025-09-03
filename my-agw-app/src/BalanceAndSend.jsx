@@ -1,13 +1,13 @@
-//./src/BalanceAndSend
+//BalanceAndSend.jsx .jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  useAccount,
   useBalance,
   useSendTransaction,
-  useSwitchChain,
   useWaitForTransactionReceipt,
+  useSwitchChain,
 } from "wagmi";
 import { isAddress, parseEther, formatEther } from "viem";
+import GameEntry from "./GameEntry";
 
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 const EXPLORER_BASE = "https://explorer.testnet.abs.xyz";
@@ -20,9 +20,7 @@ function explorerTxUrl(hash) {
  * Watches the connected wallet's native ETH balance on Abstract Testnet
  * and calls onIncrease(deltaWei) whenever the balance increases.
  */
-export function DepositWatcher({ onIncrease, pollMs = 8000 }) {
-  const { address } = useAccount();
-
+export function DepositWatcher({ address, onIncrease, pollMs = 8000 }) {
   const { data: balData } = useBalance({
     address,
     chainId: ABSTRACT_TESTNET_CHAIN_ID,
@@ -62,8 +60,10 @@ export function DepositWatcher({ onIncrease, pollMs = 8000 }) {
  * UI component: shows balance on Abstract Testnet and sends native ETH
  * (default 0.0001) to a destination (e.g., your wager pool address).
  */
-export default function BalanceAndSend({ defaultTo = "", defaultAmount = "0.0001" }) {
-  const { address, chainId, isConnected, status } = useAccount();
+export default function BalanceAndSend({ connectionState, defaultTo = "", defaultAmount = "0.0001" }) {
+  // Use connection state from props instead of hooks
+  const { address, chainId, isConnected } = connectionState;
+  
   const { switchChainAsync, isPending: switching } = useSwitchChain();
 
   const { data: balData, isLoading: balLoading, refetch: refetchBal } = useBalance({
@@ -128,7 +128,6 @@ export default function BalanceAndSend({ defaultTo = "", defaultAmount = "0.0001
       sendTransaction({
         to,
         value: wei,
-        // chainId: ABSTRACT_TESTNET_CHAIN_ID, // optional; wagmi can infer after switch
       });
     } catch (e) {
       console.error("sendTransaction error", e);
@@ -141,7 +140,7 @@ export default function BalanceAndSend({ defaultTo = "", defaultAmount = "0.0001
       <h2 style={{ marginTop: 0 }}>Abstract Testnet — Balance & Send</h2>
 
       <div style={{ marginBottom: 8 }}>
-        <div><strong>Status:</strong> {status} {isConnected ? "✅" : "❌"}</div>
+        <div><strong>Status:</strong> {isConnected ? "Connected ✅" : "Disconnected ❌"}</div>
         <div><strong>Address:</strong> {address ?? "—"}</div>
         <div>
           <strong>Network:</strong> {chainId ?? "—"} {needsSwitch ? "(switch to 11124)" : ""}
@@ -212,6 +211,7 @@ export default function BalanceAndSend({ defaultTo = "", defaultAmount = "0.0001
 
       {/* Example: show toasts/logs for deposits */}
       <DepositWatcher
+        address={address}
         onIncrease={(delta) => {
           const eth = Number(formatEther(delta));
           console.log(`💧 New deposit detected: +${eth} ETH`);
