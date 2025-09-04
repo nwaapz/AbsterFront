@@ -58,7 +58,7 @@ export default function App() {
 
   // Define sendToUnity function for React-to-Unity communication
   const sendToUnity = useCallback((messageType, data) => {
-    console.log("React -> Unity:", messageType, data);
+   // console.log("React -> Unity:", messageType, data);
     if (window.unityInstance && typeof window.unityInstance.SendMessage === 'function') {
       window.unityInstance.SendMessage('JSBridge', messageType, data);
     } else {
@@ -68,7 +68,11 @@ export default function App() {
 
   // Helper to send events to Unity - only when loaded
   const sendUnityEvent = useCallback((method, payload = "") => {
-    if (!unityLoaded) return;
+    if (!unityLoaded)
+      {
+        console.log("unity not loade");
+        return;
+      } 
     
     try {
       sendToUnity(method, typeof payload === "string" ? payload : JSON.stringify(payload));
@@ -184,9 +188,9 @@ export default function App() {
   useEffect(() => {
     const loaderUrl = "/Build/v1.loader.js";
     const config = {
-      dataUrl: "/Build/v1.data.br",
-      frameworkUrl: "/Build/v1.framework.js.br",
-      codeUrl: "/Build/v1.wasm.br",
+      dataUrl: "/Build/v1.data.unityweb",
+      frameworkUrl: "/Build/v1.framework.js.unityweb",
+      codeUrl: "/Build/v1.wasm.unityweb",
       streamingAssetsUrl: "/StreamingAssets",
       companyName: "Company",
       productName: "Product",

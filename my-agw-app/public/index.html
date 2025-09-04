@@ -52,12 +52,12 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/public.loader.js";
+      var loaderUrl = buildUrl + "/v1.loader.js";
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/public.data.unityweb",
-        frameworkUrl: buildUrl + "/public.framework.js.unityweb",
-        codeUrl: buildUrl + "/public.wasm.unityweb",
+        dataUrl: buildUrl + "/v1.data.unityweb",
+        frameworkUrl: buildUrl + "/v1.framework.js.unityweb",
+        codeUrl: buildUrl + "/v1.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DefaultCompany",
         productName: "My project (2)",
@@ -122,25 +122,9 @@
             };
 
             // Define the bridge functions
-        window.sendToReact = function(messageType, data) {
-            console.log("Unity -> React:", messageType, data);
-            if (window.handleMessageFromUnity) {
-                window.handleMessageFromUnity(messageType, data);
-            } else {
-                console.warn("React handler not found for message:", messageType);
-            }
-           
-        };
+        
 
-        window.sendToUnity = function(messageType, data) {
-            console.log("React -> Unity:", messageType, data);
-            if (window.unityInstance && typeof window.unityInstance.SendMessage === 'function') {
-                window.unityInstance.SendMessage('JSBridge', messageType, data);
-            } else {
-                console.warn("Unity instance not ready for message:", messageType);
-            }
-        };
-
+        
 
 
 
