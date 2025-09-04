@@ -182,11 +182,11 @@ export default function App() {
 
   // Load Unity WebGL
   useEffect(() => {
-    const loaderUrl = "/Build/public.loader.js";
+    const loaderUrl = "/Build/v1.loader.js";
     const config = {
-      dataUrl: "/Build/public.data.br",
-      frameworkUrl: "/Build/public.framework.js.br",
-      codeUrl: "/Build/public.wasm.br",
+      dataUrl: "/Build/v1.data.br",
+      frameworkUrl: "/Build/v1.framework.js.br",
+      codeUrl: "/Build/v1.wasm.br",
       streamingAssetsUrl: "/StreamingAssets",
       companyName: "Company",
       productName: "Product",
