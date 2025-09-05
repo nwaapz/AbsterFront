@@ -103,59 +103,42 @@ export default function App() {
           }
           break;
 
-          case "RequestProfile": {
-            // Use the currently connected wallet address — do NOT accept an address from Unity
+         case "RequestProfile": {
+            // use currently connected wallet address only
             const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
 
             if (!addrToCheck) {
-              // Not connected: tell Unity to ask React to try connecting (or show a UI)
-              sendUnityEvent(
-                "OnProfileResult",
-                JSON.stringify({ ok: false, address: "", profile: null, error: "wallet_not_connected" })
-              );
+              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
               break;
             }
 
             try {
-              // Use relative path to your backend to avoid CORS / VPN issues if you proxy
-              const backendUrl = `/api/profile/${encodeURIComponent(addrToCheck)}`;
-              // If you don't proxy and must call full URL, replace the above with your full backend URL.
-              const res = await fetch(backendUrl, { credentials: "omit" });
+              // <-- SIMPLE: use VITE_API_BASE from .env (Vite), fallback to a default host if not set
+              const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+              const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/profile/${encodeURIComponent(addrToCheck)}`;
+
+              const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
 
               if (res.status === 404) {
-                sendUnityEvent(
-                  "OnProfileResult",
-                  JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false })
-                );
+                sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false }));
                 break;
               }
 
               if (!res.ok) {
                 const txt = await res.text().catch(()=>null);
-                sendUnityEvent(
-                  "OnProfileResult",
-                  JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt })
-                );
+                sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt }));
                 break;
               }
 
               const json = await res.json();
               const profileName = json.profile_name ?? json.profile ?? null;
-
-              sendUnityEvent(
-                "OnProfileResult",
-                JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) })
-              );
+              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) }));
             } catch (err) {
               console.error("RequestProfile failed:", err);
-              sendUnityEvent(
-                "OnProfileResult",
-                JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) })
-              );
+              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) }));
             }
             break;
           }
-
 
         default:
           console.log("Unknown message type from Unity:", messageType);
