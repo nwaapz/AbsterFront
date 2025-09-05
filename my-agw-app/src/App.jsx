@@ -95,6 +95,7 @@ export default function App() {
         case "SetNewProfileName": {
           const newName = (data && String(data).trim()) || "";
           console.log("SetNewProfileName to", newName);
+
           if (!newName) {
             sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "empty_name" }));
             break;
@@ -106,13 +107,21 @@ export default function App() {
           }
 
           try {
-            const res = await fetch(`${process.env.REACT_APP_BACKEND_URL || ""}/api/update-profile`, {
+            const backendUrl = `${import.meta.env.VITE_API_BASE}/api/update-profile`;
+            const res = await fetch(backendUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ user: address, profile_name: newName })
             });
 
-            const json = await res.json();
+            let json;
+            try {
+              const text = await res.text();
+              json = text ? JSON.parse(text) : { ok: false, error: "empty_response" };
+            } catch (parseErr) {
+              console.error("Failed to parse JSON from update-profile:", parseErr);
+              json = { ok: false, error: "invalid_json" };
+            }
 
             if (json.ok) {
               sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: true, profile: newName }));
@@ -125,6 +134,7 @@ export default function App() {
           }
           break;
         }
+
 
 
 
