@@ -4,10 +4,58 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Abstract Surviva debug v0.002</title>
+    <title>Abstract Surviva debug v0.003</title>
+
+    <!-- Local CSP for dev: allows GTM + GA + Privy.
+         IMPORTANT: remove/replace for production (see below). -->
+ <meta http-equiv="Content-Security-Policy" content="
+  default-src 'self' blob: data:;
+  script-src 'self' 'unsafe-inline' 'unsafe-eval' 
+    https://auth.privy.io
+    https://www.googletagmanager.com
+    https://www.google-analytics.com
+    https://www.googletagservices.com
+    blob:;
+    worker-src 'self' blob:;
+    child-src 'self' blob: https://auth.privy.io;
+    frame-src https://auth.privy.io;
+    connect-src 'self' http://localhost:4173
+    https://auth.privy.io
+    https://www.googletagmanager.com
+    https://www.google-analytics.com
+    https://apster-backend.onrender.com
+    https://explorer-api.walletconnect.com
+    https://api.testnet.abs.xyz;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: https:;
+">
+
+
+
+
+
+    <!-- Google Tag Manager (head) - put as early as possible -->
+    <script>
+      (function(w,d,s,l,i){
+        w[l]=w[l]||[]; w[l].push({'gtm.start': new Date().getTime(), event:'gtm.js'});
+        var f=d.getElementsByTagName(s)[0], j=d.createElement(s);
+        j.async=true;
+        j.src='https://www.googletagmanager.com/gtm.js?id=GTM-WV9MVTB3';
+        f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','GTM-WV9MVTB3');
+    </script>
+    <!-- End GTM head -->
   </head>
+
   <body>
+    <!-- GTM noscript fallback immediately after opening <body> -->
+    <noscript>
+      <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WV9MVTB3"
+        height="0" width="0" style="display:none;visibility:hidden"></iframe>
+    </noscript>
+
     <div id="root"></div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

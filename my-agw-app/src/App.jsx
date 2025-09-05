@@ -1,9 +1,11 @@
+//app.jsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
 import GameEntry from "./GameEntry";
 import BalanceAndSend from "./BalanceAndSend";
+import PrivyLoginButton from "./PrivyLoginButton";
 
 export default function App() {
   const { address, status, isConnected, chainId } = useAccount();
@@ -16,14 +18,7 @@ export default function App() {
   const [unityLoaded, setUnityLoaded] = useState(false);
 
   // Single source of truth for connection state
-  const connectionState = {
-    address,
-    status,
-    isConnected,
-    chainId,
-    authenticated,
-    user
-  };
+  const connectionState = { address, status, isConnected, chainId, authenticated, user };
 
   // Fetch period from backend
   const fetchPeriod = async () => {
@@ -36,16 +31,13 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    fetchPeriod();
-  }, []);
+  useEffect(() => fetchPeriod(), []);
 
   // Countdown timer
   useEffect(() => {
     if (!periodEnd) return;
     const interval = setInterval(() => {
-      const now = Date.now();
-      const left = periodEnd - now;
+      const left = periodEnd - Date.now();
       if (left <= 0) {
         setTimeLeft(0);
         setTimeout(fetchPeriod, 1000);
@@ -56,132 +48,104 @@ export default function App() {
     return () => clearInterval(interval);
   }, [periodEnd]);
 
-  // Define sendToUnity function for React-to-Unity communication
-  const sendToUnity = useCallback((messageType, data) => {
-   // console.log("React -> Unity:", messageType, data);
-    if (window.unityInstance && typeof window.unityInstance.SendMessage === 'function') {
-      window.unityInstance.SendMessage('JSBridge', messageType, data);
+  // React -> Unity
+  const sendToUnity = useCallback((method, data) => {
+    if (window.unityInstance?.SendMessage) {
+      window.unityInstance.SendMessage("JSBridge", method, typeof data === "string" ? data : JSON.stringify(data));
     } else {
-      console.warn("Unity instance not ready for message:", messageType);
+      console.warn("Unity instance not ready for message:", method);
     }
   }, []);
 
-  // Helper to send events to Unity - only when loaded
-  const sendUnityEvent = useCallback((method, payload = "") => {
-    if (!unityLoaded)
-      {
-        console.log("unity not loade");
-        return;
-      } 
-    
-    try {
-      sendToUnity(method, typeof payload === "string" ? payload : JSON.stringify(payload));
-    } catch (e) {
-      console.warn("sendUnityEvent failed", e);
-    }
-  }, [unityLoaded, sendToUnity]);
-
-  // Define the message handler for Unity-to-React communication
-  const handleMessageFromUnity = useCallback((messageType, data) => {
-    console.log("React received message from Unity:", messageType, data);
-    
-    // Handle different message types from Unity
-    switch(messageType) {
-      case "AddTwelve":
-        const number = parseInt(data);
-        const result = number + 12;
-        console.log(`Adding 12 to ${number} = ${result}`);
-        
-        // Send the result back to Unity
-        sendUnityEvent("OnAddTwelveResult", result.toString());
-        break;
-        
-      case "RequestAuthState":
-        // Send current auth state to Unity
-        sendUnityEvent("OnAuthChanged", { 
-          authenticated: Boolean(authenticated), 
-          address: address || null 
-        });
-        break;
-        
-      case "RequestGameState":
-        // Send game state to Unity
-        sendUnityEvent("OnTimeLeftChanged", { timeLeft });
-        sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
-        break;
-        
-      // Add more cases for other message types as needed
-      default:
-        console.log("Unknown message type from Unity:", messageType);
-    }
-  }, [authenticated, address, timeLeft, periodEnd, sendUnityEvent]);
-
-  // Expose functions for Unity to call
-  useEffect(() => {
-    window.loginWithAbstract = async () => {
-      try {
-        if (!authenticated) await login();
-        else await link();
-        sendUnityEvent("OnAuthChanged", {
-          authenticated: Boolean(authenticated),
-          address: address || null,
-          success: true,
-        });
-      } catch (err) {
-        console.error("Auth failed:", err);
-        sendUnityEvent("OnAuthChanged", { success: false, error: err?.message || String(err) });
+  const sendUnityEvent = useCallback(
+    (method, payload = "") => {
+      if (!unityLoaded) return;
+      try { 
+        sendToUnity(method, payload); 
+      } catch (e) { 
+        console.warn("sendUnityEvent failed", e); 
       }
-    };
+    },
+    [unityLoaded, sendToUnity]
+  );
 
-    window.getWalletAddress = () => address || "";
-    window.isAuthenticated = () => Boolean(authenticated);
-    window.getTimeLeftMs = () => timeLeft;
-    window.getPeriodEndMs = () => periodEnd || 0;
-    window.fetchPeriodFromReact = () => fetchPeriod();
+  // Handle messages from Unity
+  const handleMessageFromUnity = useCallback(
+    async (messageType, data) => {
+      console.log("Unity -> React:", messageType, data);
+      switch (messageType) {
+        case "AddTwelve":
+          const result = parseInt(data) + 12;
+          sendUnityEvent("OnAddTwelveResult", result.toString());
+          break;
+
+        case "RequestAuthState":
+          sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
+          break;
+
+        case "RequestGameState":
+          sendUnityEvent("OnTimeLeftChanged", { timeLeft });
+          sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
+          break;
+
+        case "isWalletConnected":
+          sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
+          break;
+
+        case "tryconnect":
+          try {
+            if (!authenticated) await login();
+            else await link();
+            // Don't send response here - the useEffect below will handle it
+          } catch (err) {
+            console.error("Wallet connection failed:", err);
+            sendUnityEvent("OnWalletConnectionStatus", "no");
+          }
+          break;
+
+        default:
+          console.log("Unknown message type from Unity:", messageType);
+      }
+    },
+    [authenticated, address, isConnected, login, link, timeLeft, periodEnd, sendUnityEvent]
+  );
+
+  // Send wallet connection status when connection state changes
+  useEffect(() => {
+    if (unityLoaded) {
+      const status = isConnected && address ? address : "no";
+      sendUnityEvent("OnWalletConnectionStatus", status);
+    }
+  }, [isConnected, address, unityLoaded, sendUnityEvent]);
+
+  // Expose functions to Unity
+  useEffect(() => {
+    window.handleMessageFromUnity = handleMessageFromUnity;
+    window.sendToUnity = sendToUnity;
     window.pushStateToUnity = () => {
       if (!unityLoaded) return;
-      console.log("Unity is asking for state");
       sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
       sendUnityEvent("OnTimeLeftChanged", { timeLeft });
       sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
     };
-    
-    // Define the message handler for Unity
-    window.handleMessageFromUnity = handleMessageFromUnity;
-
-    // Expose sendToUnity for other components to use
-    window.sendToUnity = sendToUnity;
-
     return () => {
-      delete window.loginWithAbstract;
-      delete window.getWalletAddress;
-      delete window.isAuthenticated;
-      delete window.getTimeLeftMs;
-      delete window.getPeriodEndMs;
-      delete window.fetchPeriodFromReact;
-      delete window.pushStateToUnity;
       delete window.handleMessageFromUnity;
       delete window.sendToUnity;
+      delete window.pushStateToUnity;
     };
-  }, [authenticated, address, login, link, timeLeft, periodEnd, unityLoaded, handleMessageFromUnity, sendToUnity, sendUnityEvent]);
+  }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, timeLeft, periodEnd]);
 
-  // Notify Unity when state changes - only when loaded
-  useEffect(() => {
-    if (unityLoaded) {
-      sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
-    }
+  // Notify Unity on changes
+  useEffect(() => { 
+    if (unityLoaded) sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null }); 
   }, [authenticated, address, unityLoaded, sendUnityEvent]);
   
-  useEffect(() => {
-    if (unityLoaded) {
-      sendUnityEvent("OnTimeLeftChanged", { timeLeft });
-    }
+  useEffect(() => { 
+    if (unityLoaded) sendUnityEvent("OnTimeLeftChanged", { timeLeft }); 
   }, [timeLeft, unityLoaded, sendUnityEvent]);
   
-  useEffect(() => {
-    if (unityLoaded) {
-      sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
-    }
+  useEffect(() => { 
+    if (unityLoaded) sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 }); 
   }, [periodEnd, unityLoaded, sendUnityEvent]);
 
   // Load Unity WebGL
@@ -196,83 +160,41 @@ export default function App() {
       productName: "Product",
       productVersion: "1.0",
     };
-
     const script = document.createElement("script");
     script.src = loaderUrl;
     script.async = true;
-
     script.onload = () => {
-      try {
-        window
-          .createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
-            // Optional: use progress to show a loading bar
-          })
-          .then((unityInstance) => {
-            window.unityInstance = unityInstance;
-            unityRef.current = unityInstance;
-            setUnityLoaded(true);
-            window.pushStateToUnity?.();
-          })
-          .catch((e) => console.error("createUnityInstance failed", e));
-      } catch (e) {
-        console.error("Error while creating unity instance", e);
-      }
+      window.createUnityInstance(document.querySelector("#unity-canvas"), config)
+        .then((unityInstance) => {
+          window.unityInstance = unityInstance;
+          unityRef.current = unityInstance;
+          setUnityLoaded(true);
+          window.pushStateToUnity?.();
+        })
+        .catch((e) => console.error("createUnityInstance failed", e));
     };
-
     script.onerror = (e) => console.error("Failed to load Unity loader script:", e);
     document.body.appendChild(script);
-
     return () => {
-      if (window.unityInstance && typeof window.unityInstance.Quit === "function") {
-        window.unityInstance.Quit().catch(() => {});
-      }
+      if (window.unityInstance?.Quit) window.unityInstance.Quit().catch(() => {});
       document.body.removeChild(script);
       delete window.unityInstance;
     };
   }, []);
 
   return (
-    <div
-      id="unity-container"
-      style={{
-        width: "100vw",
-        height: "100vh",
-        margin: 0,
-        padding: 0,
-        overflow: "hidden",
-        position: "relative",
-        background: "#000",
-      }}
-    >
+    <div id="unity-container" style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#000" }}>
       <canvas id="unity-canvas" style={{ width: "100%", height: "100%" }} />
 
       {!unityLoaded && (
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "#000",
-            zIndex: 10,
-          }}
-        >
-          <img
-            src="/logo.png"
-            alt="Loading..."
-            style={{ 
-              width: "200px", 
-              animation: "pulse 1.5s ease-in-out infinite both" 
-            }}
-          />
+        <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "center", alignItems: "center", backgroundColor: "#000", zIndex: 10 }}>
+          <img src="/logo.png" alt="Loading..." style={{ width: 200, animation: "pulse 1.5s ease-in-out infinite both" }} />
         </div>
       )}
 
-      {/* Render child components and pass connection state */}
+      {/* Privy login button */}
+      {!authenticated && <PrivyLoginButton />}
+
       {unityLoaded && (
         <>
           <GameEntry connectionState={connectionState} />
@@ -282,18 +204,9 @@ export default function App() {
 
       <style>{`
         @keyframes pulse {
-          0% {
-            transform: scale(0.9);
-            opacity: 0.7;
-          }
-          50% {
-            transform: scale(1);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(0.9);
-            opacity: 0.7;
-          }
+          0% { transform: scale(0.9); opacity: 0.7; }
+          50% { transform: scale(1); opacity: 1; }
+          100% { transform: scale(0.9); opacity: 0.7; }
         }
       `}</style>
     </div>
