@@ -94,6 +94,7 @@ export default function App() {
 
         case "SetNewProfileName": {
           const newName = (data && String(data).trim()) || "";
+          console.log("SetNewProfileName to", newName);
           if (!newName) {
             sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "empty_name" }));
             break;
