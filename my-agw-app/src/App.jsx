@@ -92,6 +92,41 @@ export default function App() {
           sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
           break;
 
+        case "SetNewProfileName": {
+          const newName = (data && String(data).trim()) || "";
+          if (!newName) {
+            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "empty_name" }));
+            break;
+          }
+
+          if (!address) {
+            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "wallet_not_connected" }));
+            break;
+          }
+
+          try {
+            const res = await fetch(`${process.env.REACT_APP_BACKEND_URL || ""}/api/update-profile`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user: address, profile_name: newName })
+            });
+
+            const json = await res.json();
+
+            if (json.ok) {
+              sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: true, profile: newName }));
+            } else {
+              sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: json.error || "unknown_error" }));
+            }
+          } catch (err) {
+            console.error("SetNewProfileName failed:", err);
+            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: String(err) }));
+          }
+          break;
+        }
+
+
+
         case "tryconnect":
           try {
             if (!authenticated) await login();
