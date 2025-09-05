@@ -103,6 +103,60 @@ export default function App() {
           }
           break;
 
+          case "RequestProfile": {
+            // Use the currently connected wallet address — do NOT accept an address from Unity
+            const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+
+            if (!addrToCheck) {
+              // Not connected: tell Unity to ask React to try connecting (or show a UI)
+              sendUnityEvent(
+                "OnProfileResult",
+                JSON.stringify({ ok: false, address: "", profile: null, error: "wallet_not_connected" })
+              );
+              break;
+            }
+
+            try {
+              // Use relative path to your backend to avoid CORS / VPN issues if you proxy
+              const backendUrl = `/api/profile/${encodeURIComponent(addrToCheck)}`;
+              // If you don't proxy and must call full URL, replace the above with your full backend URL.
+              const res = await fetch(backendUrl, { credentials: "omit" });
+
+              if (res.status === 404) {
+                sendUnityEvent(
+                  "OnProfileResult",
+                  JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false })
+                );
+                break;
+              }
+
+              if (!res.ok) {
+                const txt = await res.text().catch(()=>null);
+                sendUnityEvent(
+                  "OnProfileResult",
+                  JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt })
+                );
+                break;
+              }
+
+              const json = await res.json();
+              const profileName = json.profile_name ?? json.profile ?? null;
+
+              sendUnityEvent(
+                "OnProfileResult",
+                JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) })
+              );
+            } catch (err) {
+              console.error("RequestProfile failed:", err);
+              sendUnityEvent(
+                "OnProfileResult",
+                JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) })
+              );
+            }
+            break;
+          }
+
+
         default:
           console.log("Unknown message type from Unity:", messageType);
       }
