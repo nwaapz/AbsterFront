@@ -22,13 +22,13 @@ headers:
       Content-Encoding: br
       Cache-Control: public, max-age=31536000, immutable
 
-  # Unity loader (uncompressed .js) -- explicit Content-Type + caching
+  # Unity loader (uncompressed .js)
   - path: /Build/*.loader.js
     values:
       Content-Type: application/javascript
       Cache-Control: public, max-age=31536000, immutable
 
-  # Optional: serve other JS/CSS with caching
+  # Other JS/CSS with caching
   - path: /assets/*.js
     values:
       Content-Type: application/javascript
@@ -39,16 +39,15 @@ headers:
       Content-Type: text/css
       Cache-Control: public, max-age=31536000, immutable
 
-  # Apply CSP to all other paths (production-ready; edit as needed)
+  # Global headers + CSP
   - path: /*
-    headers:
+    values:
       Content-Security-Policy: >
         default-src 'self' blob: data:;
         script-src 'self' 'unsafe-inline' 'unsafe-eval'
-          https://auth.privy.io
           https://www.googletagmanager.com
           https://www.google-analytics.com
-          https://www.googletagservices.com
+          https://auth.privy.io
           blob:;
         script-src-elem 'self'
           https://www.googletagmanager.com
@@ -70,8 +69,7 @@ headers:
       X-Content-Type-Options: nosniff
       X-Frame-Options: DENY
 
-
-# SPA rewrite so deep links go to index.html (important for React Router)
+# SPA rewrite for React Router / client-side routing
 routes:
   - type: rewrite
     source: /*
