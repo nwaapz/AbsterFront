@@ -47,10 +47,11 @@ headers:
     values:
       Content-Security-Policy: >
         default-src 'self' blob: data:;
-        script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:
+        script-src 'self' 'unsafe-inline' 'unsafe-eval'
           https://www.googletagmanager.com
           https://www.google-analytics.com
-          https://auth.privy.io;
+          https://auth.privy.io
+          blob:;
         script-src-elem 'self'
           https://www.googletagmanager.com
           https://www.google-analytics.com
