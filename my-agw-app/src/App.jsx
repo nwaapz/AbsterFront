@@ -295,7 +295,8 @@ export default function App() {
       )}
 
       {/* Privy login button */}
-      //{!authenticated && <PrivyLoginButton />}
+      {/* {!authenticated && <PrivyLoginButton />} */}
+
 
       {unityLoaded && (
         <>
