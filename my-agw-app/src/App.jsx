@@ -153,7 +153,7 @@ export default function App() {
 
               // Option A: immediate reaction after login resolves
               // (useful if login() resolves before usePrivy updates)
-              sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "yes");
+              sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
 
               // Option B: rely on usePrivy() effect — your app already does this:
               // a useEffect watching `authenticated` will run and call sendUnityEvent("OnAuthChanged", ...)
