@@ -1,45 +1,6 @@
 staticPublishPath: ./dist
 
 headers:
-  # Unity Data (Brotli compressed)
-  - path: /Build/*.data.unityweb
-    values:
-      Content-Type: application/octet-stream
-      Content-Encoding: br
-      Cache-Control: public, max-age=31536000, immutable
-
-  # Unity Framework JS (Brotli compressed)
-  - path: /Build/*.framework.js.unityweb
-    values:
-      Content-Type: application/javascript
-      Content-Encoding: br
-      Cache-Control: public, max-age=31536000, immutable
-
-  # Unity WebAssembly (Brotli compressed)
-  - path: /Build/*.wasm.unityweb
-    values:
-      Content-Type: application/wasm
-      Content-Encoding: br
-      Cache-Control: public, max-age=31536000, immutable
-
-  # Unity loader (uncompressed .js)
-  - path: /Build/*.loader.js
-    values:
-      Content-Type: application/javascript
-      Cache-Control: public, max-age=31536000, immutable
-
-  # Other JS/CSS with caching
-  - path: /assets/*.js
-    values:
-      Content-Type: application/javascript
-      Cache-Control: public, max-age=31536000, immutable
-
-  - path: /assets/*.css
-    values:
-      Content-Type: text/css
-      Cache-Control: public, max-age=31536000, immutable
-
-  # Global headers + CSP
   - path: /*
     values:
       Content-Security-Policy: >
@@ -47,29 +8,9 @@ headers:
         script-src 'self' 'unsafe-inline' 'unsafe-eval'
           https://www.googletagmanager.com
           https://www.google-analytics.com
-          https://auth.privy.io
-          blob:;
-        script-src-elem 'self'
-          https://www.googletagmanager.com
-          https://www.google-analytics.com
           https://auth.privy.io;
-        worker-src 'self' blob:;
-        child-src 'self' blob: https://auth.privy.io;
-        frame-src https://auth.privy.io;
-        connect-src 'self'
-          https://auth.privy.io
-          https://www.googletagmanager.com
-          https://*.google-analytics.com
-          https://apster-backend.onrender.com
-          https://explorer-api.walletconnect.com
-          https://api.testnet.abs.xyz;
-        style-src 'self' 'unsafe-inline';
-        img-src 'self' data: https:;
-      Referrer-Policy: no-referrer-when-downgrade
       X-Content-Type-Options: nosniff
-      X-Frame-Options: DENY
 
-# SPA rewrite for React Router / client-side routing
 routes:
   - type: rewrite
     source: /*
