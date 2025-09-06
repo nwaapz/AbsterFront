@@ -41,7 +41,7 @@ headers:
 
   # Apply CSP to all other paths (production-ready; edit as needed)
   - path: /*
-    values:
+    headers:
       Content-Security-Policy: >
         default-src 'self' blob: data:;
         script-src 'self' 'unsafe-inline' 'unsafe-eval'
@@ -50,14 +50,17 @@ headers:
           https://www.google-analytics.com
           https://www.googletagservices.com
           blob:;
-        script-src-elem 'self' https://www.googletagmanager.com https://www.google-analytics.com https://auth.privy.io;
+        script-src-elem 'self'
+          https://www.googletagmanager.com
+          https://www.google-analytics.com
+          https://auth.privy.io;
         worker-src 'self' blob:;
         child-src 'self' blob: https://auth.privy.io;
         frame-src https://auth.privy.io;
         connect-src 'self'
           https://auth.privy.io
           https://www.googletagmanager.com
-          https://www.google-analytics.com
+          https://*.google-analytics.com
           https://apster-backend.onrender.com
           https://explorer-api.walletconnect.com
           https://api.testnet.abs.xyz;
@@ -66,6 +69,7 @@ headers:
       Referrer-Policy: no-referrer-when-downgrade
       X-Content-Type-Options: nosniff
       X-Frame-Options: DENY
+
 
 # SPA rewrite so deep links go to index.html (important for React Router)
 routes:
