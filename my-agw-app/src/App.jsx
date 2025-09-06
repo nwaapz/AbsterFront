@@ -20,6 +20,7 @@ export default function App() {
   // Single source of truth for connection state
   const connectionState = { address, status, isConnected, chainId, authenticated, user };
 
+    let inProgress = false;
   // Fetch period from backend
   const fetchPeriod = async () => {
     try {
@@ -138,16 +139,34 @@ export default function App() {
 
 
 
-        case "tryconnect":
-          try {
-            if (!authenticated) await login();
-            else await link();
-            // Don't send response here - the useEffect below will handle it
-          } catch (err) {
-            console.error("Wallet connection failed:", err);
-            sendUnityEvent("OnWalletConnectionStatus", "no");
-          }
-          break;
+     
+
+          case "tryconnect":
+            if (inProgress) break;
+            inProgress = true;
+            try {
+              if (!authenticated) {
+                await login(); // resolves on success, throws on failure/cancel
+              } else {
+                await link();  // resolves when wallet is linked to existing Privy session
+              }
+
+              // Option A: immediate reaction after login resolves
+              // (useful if login() resolves before usePrivy updates)
+              sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "yes");
+
+              // Option B: rely on usePrivy() effect — your app already does this:
+              // a useEffect watching `authenticated` will run and call sendUnityEvent("OnAuthChanged", ...)
+
+            } catch (err) {
+              // login() threw — user cancelled, popup closed, network or provider error, etc.
+              console.error("Privy login/link failed:", err);
+              sendUnityEvent("OnWalletConnectionStatus", "no");
+            } finally {
+              inProgress = false;
+            }
+            break;
+
 
          case "RequestProfile": {
             // use currently connected wallet address only
@@ -276,7 +295,7 @@ export default function App() {
       )}
 
       {/* Privy login button */}
-      {!authenticated && <PrivyLoginButton />}
+      //{!authenticated && <PrivyLoginButton />}
 
       {unityLoaded && (
         <>
