@@ -1,4 +1,4 @@
-//GameEntry.jsx
+// GameEntry.jsx
 import React, { useEffect, useState } from "react";
 import {
   useSendTransaction,
@@ -6,28 +6,25 @@ import {
   useSwitchChain,
   useReadContract,
 } from "wagmi";
-import { parseEther } from "viem";
 import toast from "react-hot-toast";
 import contractJson from "./abi/WagerPoolSingleEntry.json";
-const abi = contractJson.abi;
+import { handlePayment } from "./paymentHandler";
 
+const abi = contractJson.abi;
 const CONTRACT_ADDRESS =
   import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
-const ENTRY_FEE = parseEther("0.0001");
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
 export default function GameEntry({ connectionState }) {
-  // Use connection state from props instead of hooks
   const { address, isConnected, chainId, authenticated, user } = connectionState;
-  
   const { switchChainAsync, isPending: switching } = useSwitchChain();
+
   const [hasPaid, setHasPaid] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [score, setScore] = useState(0);
 
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
 
-  // Read contract - now uses address from props
   const { data: onchainHasPaid, refetch: refetchHasPaid } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,
@@ -40,21 +37,17 @@ export default function GameEntry({ connectionState }) {
     },
   });
 
-  const { data: poolDeposit, refetch: refetchPoolDeposit } = useReadContract({
+  const { data: poolDeposit } = useReadContract({
     abi,
     address: CONTRACT_ADDRESS,
     functionName: "poolBalance",
     query: { enabled: !!address && isCorrectChain, retry: 3 },
-    onError(err) {
-      console.error("Failed to read pool balance:", err);
-      toast.error(err.message);
-    },
   });
 
   const { data: txHash, sendTransaction, reset: resetSend } = useSendTransaction();
   const { data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
 
-  // --- Update hasPaid on load ---
+  // Sync hasPaid
   useEffect(() => {
     if (onchainHasPaid !== undefined) {
       setHasPaid(onchainHasPaid);
@@ -62,11 +55,10 @@ export default function GameEntry({ connectionState }) {
     }
   }, [onchainHasPaid]);
 
-  // --- Update after transaction ---
+  // Wait for confirmation
   useEffect(() => {
     if (receipt) {
       setIsProcessing(true);
-
       const interval = setInterval(async () => {
         try {
           const paid = await refetchHasPaid();
@@ -79,12 +71,10 @@ export default function GameEntry({ connectionState }) {
           console.error("Error checking hasPaid:", err);
         }
       }, 2000);
-
       return () => clearInterval(interval);
     }
   }, [receipt, refetchHasPaid]);
 
-  // --- Chain check ---
   const ensureChain = async () => {
     if (!isConnected) {
       toast.error("Connect wallet");
@@ -102,7 +92,6 @@ export default function GameEntry({ connectionState }) {
     return true;
   };
 
-  // --- Join / pay game ---
   const handleJoin = async () => {
     if (!address) return toast.error("Connect wallet");
     if (hasPaid) return toast.error("Already paid");
@@ -110,42 +99,29 @@ export default function GameEntry({ connectionState }) {
     const ok = await ensureChain();
     if (!ok) return;
 
-    resetSend();
-
-    try {
-      const tx = await sendTransaction({ to: CONTRACT_ADDRESS, value: ENTRY_FEE });
-      console.log("Transaction sent:", tx);
-      toast.success("Transaction sent! Awaiting confirmation...");
-    } catch (err) {
-      console.error("Payment failed or cancelled:", err);
-      toast.error("Payment cancelled or failed");
-    }
+    // Reuse shared handler
+    await handlePayment({ address, chainId, sendUnityEvent: () => {}, toast });
   };
 
-  // --- Get email from Privy ---
   const getEmail = () => {
     if (!authenticated || !user) return null;
-    const account = user.linkedAccounts?.find(acc => acc.email);
+    const account = user.linkedAccounts?.find((acc) => acc.email);
     return account?.email || null;
   };
 
-  // --- Submit score ---
   const submitScore = async () => {
     if (!address) return toast.error("Connect wallet");
 
     try {
-      const response = await fetch(
-        "https://apster-backend.onrender.com/api/submit-score",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user: address,
-            email: getEmail(),
-            score,
-          }),
-        }
-      );
+      const response = await fetch("https://apster-backend.onrender.com/api/submit-score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user: address,
+          email: getEmail(),
+          score,
+        }),
+      });
 
       const data = await response.json();
       if (data.ok) toast.success(`Score submitted: ${score}`);
@@ -161,9 +137,10 @@ export default function GameEntry({ connectionState }) {
     : isProcessing
     ? "Processing Transaction..."
     : "Join Game (0.0001 ETH)";
+
   const buttonDisabled = hasPaid || isProcessing || switching;
 
-  // --- Render ---
+  // Render
   if (!isConnected)
     return (
       <div style={{ marginTop: 20, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
@@ -216,7 +193,6 @@ export default function GameEntry({ connectionState }) {
         {buttonLabel}
       </button>
 
-      {/* --- Show score input only after payment --- */}
       {hasPaid && !isProcessing && (
         <div style={{ marginTop: 16 }}>
           <input
