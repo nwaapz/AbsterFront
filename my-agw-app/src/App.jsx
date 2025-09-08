@@ -267,7 +267,12 @@ export default function App() {
 
               try {
                 // reuse your existing payment logic
-                await handlePayment();
+                await handlePayment({
+                    address,          // current connected wallet
+                    chainId,          // current chainId
+                    sendUnityEvent,   // callback to Unity
+                    toast             // react-hot-toast for messages
+                  });
 
                 // Unity should get a simple OK result (payment pending confirmation)
                 sendUnityEvent("OnPaymentResult", JSON.stringify({
