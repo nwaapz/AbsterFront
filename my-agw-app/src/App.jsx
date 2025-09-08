@@ -66,10 +66,15 @@ export default function App() {
 
   // React -> Unity
   const sendToUnity = useCallback((method, data) => {
-    if (window.unityInstance?.SendMessage) {
-      window.unityInstance.SendMessage("JSBridge", method, typeof data === "string" ? data : JSON.stringify(data));
-    } else {
-      console.warn("Unity instance not ready for message:", method);
+    try {
+      if (window.unityInstance?.SendMessage) {
+        const payload = typeof data === "string" ? data : JSON.stringify(data);
+        window.unityInstance.SendMessage("JSBridge", method, payload);
+      } else {
+        console.warn("Unity instance not ready for message:", method);
+      }
+    } catch (e) {
+      console.error("Error in sendToUnity:", e);
     }
   }, []);
 
@@ -109,6 +114,8 @@ export default function App() {
           break;
 
         case "CheckPaymentStatus":
+          console.log("Received CheckPaymentStatus from Unity");
+          
           // If not connected or wrong chain, respond with error
           if (!address) {
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
@@ -130,7 +137,10 @@ export default function App() {
           
           // Refetch and send the payment status
           try {
+            console.log("Refetching payment status for address:", address);
             const result = await refetchHasPaid();
+            console.log("Payment status result:", result);
+            
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
               paid: Boolean(result.data), 
               address: address
@@ -278,7 +288,11 @@ export default function App() {
 
   // Expose functions to Unity
   useEffect(() => {
-    window.handleMessageFromUnity = handleMessageFromUnity;
+    // Create a wrapper function that properly handles the call from Unity
+    window.handleMessageFromUnity = (messageType, data) => {
+      handleMessageFromUnity(messageType, data);
+    };
+    
     window.sendToUnity = sendToUnity;
     window.pushStateToUnity = () => {
       if (!unityLoaded) return;
@@ -294,6 +308,7 @@ export default function App() {
         }));
       }
     };
+    
     return () => {
       delete window.handleMessageFromUnity;
       delete window.sendToUnity;
