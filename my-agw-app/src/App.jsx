@@ -286,10 +286,10 @@ export default function App() {
           }
 
           if (confirmed) {
-            sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: true, message: "Payment confirmed" }));
+           // sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: true, message: "Payment confirmed" }));
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: true, address }));
           } else {
-            sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: false, error: "confirm_timeout" }));
+         //   sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: false, error: "confirm_timeout" }));
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: "confirm_timeout" }));
           }
         } catch (err) {
