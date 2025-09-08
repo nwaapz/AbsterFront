@@ -1,11 +1,15 @@
-//app.jsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAbstractPrivyLogin } from "@abstract-foundation/agw-react/privy";
 import GameEntry from "./GameEntry";
 import BalanceAndSend from "./BalanceAndSend";
 import PrivyLoginButton from "./PrivyLoginButton";
+import contractJson from "./abi/WagerPoolSingleEntry.json";
+
+const abi = contractJson.abi;
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
+const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
 export default function App() {
   const { address, status, isConnected, chainId } = useAccount();
@@ -20,7 +24,18 @@ export default function App() {
   // Single source of truth for connection state
   const connectionState = { address, status, isConnected, chainId, authenticated, user };
 
-    let inProgress = false;
+  // Check payment status using the same logic as GameEntry.jsx
+  const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
+  const { data: hasPaid, refetch: refetchHasPaid } = useReadContract({
+    abi,
+    address: CONTRACT_ADDRESS,
+    functionName: "hasPaid",
+    args: [address],
+    query: { enabled: !!address && isCorrectChain, retry: 3 },
+  });
+
+  let inProgress = false;
+  
   // Fetch period from backend
   const fetchPeriod = async () => {
     try {
@@ -93,6 +108,43 @@ export default function App() {
           sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
           break;
 
+        case "CheckPaymentStatus":
+          // If not connected or wrong chain, respond with error
+          if (!address) {
+            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
+              paid: false, 
+              address: null,
+              error: "not_connected"
+            }));
+            break;
+          }
+          
+          if (chainId !== ABSTRACT_TESTNET_CHAIN_ID) {
+            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
+              paid: false, 
+              address: address,
+              error: "wrong_chain"
+            }));
+            break;
+          }
+          
+          // Refetch and send the payment status
+          try {
+            const result = await refetchHasPaid();
+            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
+              paid: Boolean(result.data), 
+              address: address
+            }));
+          } catch (error) {
+            console.error("Error checking payment status:", error);
+            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
+              paid: false, 
+              address: address,
+              error: error.message
+            }));
+          }
+          break;
+
         case "SetNewProfileName": {
           const newName = (data && String(data).trim()) || "";
           console.log("SetNewProfileName to", newName);
@@ -136,80 +188,74 @@ export default function App() {
           break;
         }
 
-
-
-
-     
-
-          case "tryconnect":
-            if (inProgress) break;
-            inProgress = true;
-            try {
-              if (!authenticated) {
-                await login(); // resolves on success, throws on failure/cancel
-              } else {
-                await link();  // resolves when wallet is linked to existing Privy session
-              }
-
-              // Option A: immediate reaction after login resolves
-              // (useful if login() resolves before usePrivy updates)
-              sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
-
-              // Option B: rely on usePrivy() effect — your app already does this:
-              // a useEffect watching `authenticated` will run and call sendUnityEvent("OnAuthChanged", ...)
-
-            } catch (err) {
-              // login() threw — user cancelled, popup closed, network or provider error, etc.
-              console.error("Privy login/link failed:", err);
-              sendUnityEvent("OnWalletConnectionStatus", "no");
-            } finally {
-              inProgress = false;
+        case "tryconnect":
+          if (inProgress) break;
+          inProgress = true;
+          try {
+            if (!authenticated) {
+              await login(); // resolves on success, throws on failure/cancel
+            } else {
+              await link();  // resolves when wallet is linked to existing Privy session
             }
+
+            // Option A: immediate reaction after login resolves
+            // (useful if login() resolves before usePrivy updates)
+            sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
+
+            // Option B: rely on usePrivy() effect — your app already does this:
+            // a useEffect watching `authenticated` will run and call sendUnityEvent("OnAuthChanged", ...)
+
+          } catch (err) {
+            // login() threw — user cancelled, popup closed, network or provider error, etc.
+            console.error("Privy login/link failed:", err);
+            sendUnityEvent("OnWalletConnectionStatus", "no");
+          } finally {
+            inProgress = false;
+          }
+          break;
+
+        case "RequestProfile": {
+          // use currently connected wallet address only
+          const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+
+          if (!addrToCheck) {
+            sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
             break;
+          }
 
+          try {
+            // <-- SIMPLE: use VITE_API_BASE from .env (Vite), fallback to a default host if not set
+            const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/profile/${encodeURIComponent(addrToCheck)}`;
 
-         case "RequestProfile": {
-            // use currently connected wallet address only
-            const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+            const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
 
-            if (!addrToCheck) {
-              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
+            if (res.status === 404) {
+              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false }));
               break;
             }
 
-            try {
-              // <-- SIMPLE: use VITE_API_BASE from .env (Vite), fallback to a default host if not set
-              const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
-              const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/profile/${encodeURIComponent(addrToCheck)}`;
-
-              const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
-
-              if (res.status === 404) {
-                sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false }));
-                break;
-              }
-
-              if (!res.ok) {
-                const txt = await res.text().catch(()=>null);
-                sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt }));
-                break;
-              }
-
-              const json = await res.json();
-              const profileName = json.profile_name ?? json.profile ?? null;
-              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) }));
-            } catch (err) {
-              console.error("RequestProfile failed:", err);
-              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) }));
+            if (!res.ok) {
+              const txt = await res.text().catch(()=>null);
+              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt }));
+              break;
             }
-            break;
+
+            const json = await res.json();
+            const profileName = json.profile_name ?? json.profile ?? null;
+            sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) }));
+          } catch (err) {
+            console.error("RequestProfile failed:", err);
+            sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) }));
           }
+          break;
+        }
 
         default:
           console.log("Unknown message type from Unity:", messageType);
       }
     },
-    [authenticated, address, isConnected, login, link, timeLeft, periodEnd, sendUnityEvent]
+    [authenticated, address, isConnected, login, link, timeLeft, periodEnd, sendUnityEvent, chainId, refetchHasPaid]
   );
 
   // Send wallet connection status when connection state changes
@@ -220,6 +266,16 @@ export default function App() {
     }
   }, [isConnected, address, unityLoaded, sendUnityEvent]);
 
+  // Send payment status when it changes
+  useEffect(() => {
+    if (unityLoaded && address && chainId === ABSTRACT_TESTNET_CHAIN_ID) {
+      sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
+        paid: Boolean(hasPaid), 
+        address: address
+      }));
+    }
+  }, [hasPaid, address, chainId, unityLoaded, sendUnityEvent]);
+
   // Expose functions to Unity
   useEffect(() => {
     window.handleMessageFromUnity = handleMessageFromUnity;
@@ -229,13 +285,21 @@ export default function App() {
       sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
       sendUnityEvent("OnTimeLeftChanged", { timeLeft });
       sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
+      
+      // Also push payment status
+      if (address && chainId === ABSTRACT_TESTNET_CHAIN_ID) {
+        sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
+          paid: Boolean(hasPaid), 
+          address: address
+        }));
+      }
     };
     return () => {
       delete window.handleMessageFromUnity;
       delete window.sendToUnity;
       delete window.pushStateToUnity;
     };
-  }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, timeLeft, periodEnd]);
+  }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, timeLeft, periodEnd, hasPaid, chainId]);
 
   // Notify Unity on changes
   useEffect(() => { 
@@ -296,7 +360,6 @@ export default function App() {
 
       {/* Privy login button */}
       {/* {!authenticated && <PrivyLoginButton />} */}
-
 
       {unityLoaded && (
         <>
