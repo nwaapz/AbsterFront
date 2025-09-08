@@ -6,9 +6,9 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c750
 const ENTRY_FEE = parseEther("0.0001");
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
-export async function handlePayment({ address, chainId, sendUnityEvent, toast }) {
+export async function handlePayment({ address, chainId, sendUnityEvent }) {
   if (!address) {
-    toast.error("Connect wallet");
+    console.log("Connect wallet");
     sendUnityEvent(
       "OnPaymentResult",
       JSON.stringify({ success: false, error: "not_connected" })
@@ -17,7 +17,7 @@ export async function handlePayment({ address, chainId, sendUnityEvent, toast })
   }
 
   if (chainId !== ABSTRACT_TESTNET_CHAIN_ID) {
-    toast.error("Wrong network, switch to Abstract Testnet");
+    console.log("Wrong network, switch to Abstract Testnet");
     sendUnityEvent(
       "OnPaymentResult",
       JSON.stringify({ success: false, error: "wrong_chain" })
@@ -33,7 +33,7 @@ export async function handlePayment({ address, chainId, sendUnityEvent, toast })
     });
 
     console.log("Transaction sent:", tx);
-    toast.success("Transaction sent! Awaiting confirmation...");
+    console.log("Transaction sent! Awaiting confirmation...");
 
     sendUnityEvent(
       "OnPaymentResult",
@@ -41,7 +41,7 @@ export async function handlePayment({ address, chainId, sendUnityEvent, toast })
     );
   } catch (err) {
     console.error("Payment failed or cancelled:", err);
-    toast.error("Payment cancelled or failed");
+    console.log("Payment cancelled or failed");
 
     sendUnityEvent(
       "OnPaymentResult",
