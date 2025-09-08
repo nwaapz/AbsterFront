@@ -8,6 +8,8 @@ import BalanceAndSend from "./BalanceAndSend";
 import PrivyLoginButton from "./PrivyLoginButton";
 import contractJson from "./abi/WagerPoolSingleEntry.json";
 import { handlePayment } from "./paymentHandler";
+import { toast } from 'react-hot-toast';
+import { Toaster } from 'react-hot-toast';
 
 const abi = contractJson.abi;
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
@@ -395,6 +397,8 @@ export default function App() {
   return (
     <div id="unity-container" style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#000" }}>
       <canvas id="unity-canvas" style={{ width: "100%", height: "100%" }} />
+
+      <Toaster position="top-right" /> {/* <-- Add this */}
 
       {!unityLoaded && (
         <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "center", alignItems: "center", backgroundColor: "#000", zIndex: 10 }}>
