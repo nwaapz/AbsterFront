@@ -1,4 +1,4 @@
-//app.jsx
+// app.jsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useAccount, useReadContract } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
@@ -8,11 +8,12 @@ import BalanceAndSend from "./BalanceAndSend";
 import PrivyLoginButton from "./PrivyLoginButton";
 import contractJson from "./abi/WagerPoolSingleEntry.json";
 import { handlePayment } from "./paymentHandler";
-import { toast } from 'react-hot-toast';
-import { Toaster } from 'react-hot-toast';
+import { Toaster } from "react-hot-toast";
 
 const abi = contractJson.abi;
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
+const CONTRACT_ADDRESS =
+  import.meta.env.VITE_CONTRACT_ADDRESS ||
+  "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 
 export default function App() {
@@ -25,8 +26,18 @@ export default function App() {
   const unityRef = useRef(null);
   const [unityLoaded, setUnityLoaded] = useState(false);
 
+  // persistent in-progress flag for operations like tryconnect
+  const inProgressRef = useRef(false);
+
   // Single source of truth for connection state
-  const connectionState = { address, status, isConnected, chainId, authenticated, user };
+  const connectionState = {
+    address,
+    status,
+    isConnected,
+    chainId,
+    authenticated,
+    user,
+  };
 
   // Check payment status using the same logic as GameEntry.jsx
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
@@ -38,12 +49,12 @@ export default function App() {
     query: { enabled: !!address && isCorrectChain, retry: 3 },
   });
 
-  let inProgress = false;
-  
   // Fetch period from backend
   const fetchPeriod = async () => {
     try {
-      const res = await fetch("https://apster-backend.onrender.com/api/period");
+      const res = await fetch(
+        "https://apster-backend.onrender.com/api/period"
+      );
       const data = await res.json();
       setPeriodEnd(Number(data.periodEnd));
     } catch (err) {
@@ -51,7 +62,9 @@ export default function App() {
     }
   };
 
-  useEffect(() => fetchPeriod(), []);
+  useEffect(() => {
+    fetchPeriod();
+  }, []);
 
   // Countdown timer
   useEffect(() => {
@@ -68,7 +81,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [periodEnd]);
 
-  // React -> Unity
+  // React -> Unity helper
   const sendToUnity = useCallback((method, data) => {
     try {
       if (window.unityInstance?.SendMessage) {
@@ -85,10 +98,10 @@ export default function App() {
   const sendUnityEvent = useCallback(
     (method, payload = "") => {
       if (!unityLoaded) return;
-      try { 
-        sendToUnity(method, payload); 
-      } catch (e) { 
-        console.warn("sendUnityEvent failed", e); 
+      try {
+        sendToUnity(method, payload);
+      } catch (e) {
+        console.warn("sendUnityEvent failed", e);
       }
     },
     [unityLoaded, sendToUnity]
@@ -99,65 +112,69 @@ export default function App() {
     async (messageType, data) => {
       console.log("Unity -> React:", messageType, data);
       switch (messageType) {
-        case "AddTwelve":
+        case "AddTwelve": {
           const result = parseInt(data) + 12;
           sendUnityEvent("OnAddTwelveResult", result.toString());
           break;
+        }
 
-        case "RequestAuthState":
-          sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
+        case "RequestAuthState": {
+          sendUnityEvent("OnAuthChanged", {
+            authenticated: Boolean(authenticated),
+            address: address || null,
+          });
           break;
+        }
 
-        case "RequestGameState":
+        case "RequestGameState": {
           sendUnityEvent("OnTimeLeftChanged", { timeLeft });
           sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
           break;
+        }
 
-        case "isWalletConnected":
-          sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
+        case "isWalletConnected": {
+          sendUnityEvent(
+            "OnWalletConnectionStatus",
+            isConnected && address ? address : "no"
+          );
           break;
+        }
 
-        case "CheckPaymentStatus":
+        case "CheckPaymentStatus": {
           console.log("Received CheckPaymentStatus from Unity");
-          
-          // If not connected or wrong chain, respond with error
           if (!address) {
-            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
-              paid: false, 
-              address: null,
-              error: "not_connected"
-            }));
+            sendUnityEvent(
+              "OnPaymentStatus",
+              JSON.stringify({ paid: false, address: null, error: "not_connected" })
+            );
             break;
           }
-          
+
           if (chainId !== ABSTRACT_TESTNET_CHAIN_ID) {
-            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
-              paid: false, 
-              address: address,
-              error: "wrong_chain"
-            }));
+            sendUnityEvent(
+              "OnPaymentStatus",
+              JSON.stringify({ paid: false, address, error: "wrong_chain" })
+            );
             break;
           }
-          
-          // Refetch and send the payment status
+
           try {
             console.log("Refetching payment status for address:", address);
             const result = await refetchHasPaid();
             console.log("Payment status result:", result);
-            
-            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
-              paid: Boolean(result.data), 
-              address: address
-            }));
+            sendUnityEvent(
+              "OnPaymentStatus",
+              JSON.stringify({ paid: Boolean(result.data), address })
+            );
           } catch (error) {
             console.error("Error checking payment status:", error);
-            sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
-              paid: false, 
-              address: address,
-              error: error.message
-            }));
+            sendUnityEvent(
+              "OnPaymentStatus",
+              JSON.stringify({ paid: false, address, error: error.message })
+            );
           }
           break;
+        }
 
         case "SetNewProfileName": {
           const newName = (data && String(data).trim()) || "";
@@ -178,7 +195,7 @@ export default function App() {
             const res = await fetch(backendUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user: address, profile_name: newName })
+              body: JSON.stringify({ user: address, profile_name: newName }),
             });
 
             let json;
@@ -202,43 +219,35 @@ export default function App() {
           break;
         }
 
-        case "tryconnect":
-          if (inProgress) break;
-          inProgress = true;
+        case "tryconnect": {
+          if (inProgressRef.current) break;
+          inProgressRef.current = true;
           try {
             if (!authenticated) {
               await login(); // resolves on success, throws on failure/cancel
             } else {
-              await link();  // resolves when wallet is linked to existing Privy session
+              await link(); // wallet linking flow for Privy
             }
 
-            // Option A: immediate reaction after login resolves
-            // (useful if login() resolves before usePrivy updates)
+            // immediate reaction after login resolves
             sendUnityEvent("OnWalletConnectionStatus", isConnected && address ? address : "no");
-
-            // Option B: rely on usePrivy() effect — your app already does this:
-            // a useEffect watching `authenticated` will run and call sendUnityEvent("OnAuthChanged", ...)
-
           } catch (err) {
-            // login() threw — user cancelled, popup closed, network or provider error, etc.
             console.error("Privy login/link failed:", err);
             sendUnityEvent("OnWalletConnectionStatus", "no");
           } finally {
-            inProgress = false;
+            inProgressRef.current = false;
           }
           break;
+        }
 
         case "RequestProfile": {
-          // use currently connected wallet address only
           const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
-
           if (!addrToCheck) {
             sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
             break;
           }
 
           try {
-            // <-- SIMPLE: use VITE_API_BASE from .env (Vite), fallback to a default host if not set
             const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
             const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/profile/${encodeURIComponent(addrToCheck)}`;
 
@@ -250,7 +259,7 @@ export default function App() {
             }
 
             if (!res.ok) {
-              const txt = await res.text().catch(()=>null);
+              const txt = await res.text().catch(() => null);
               sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt }));
               break;
             }
@@ -264,33 +273,67 @@ export default function App() {
           }
           break;
         }
+
         case "TryPayForGame": {
-              console.log("Unity -> React: TryPayForGame :)");
+          console.log("Unity -> React: TryPayForGame :)");
 
-              try {
-                // reuse your existing payment logic
-                await handlePayment({
-                    address,          // current connected wallet
-                    chainId,          // current chainId
-                    sendUnityEvent   // callback to Unity
-                             // react-hot-toast for messages
-                  });
+          try {
+            // call centralized payment handler (this will call sendUnityEvent with OnPaymentResult)
+            const result = await handlePayment({
+              address,
+              chainId,
+              sendUnityEvent,
+            });
 
-                // Unity should get a simple OK result (payment pending confirmation)
-                sendUnityEvent("OnPaymentResult", JSON.stringify({
-                  ok: true,
-                  status: "pending",
-                  message: "Transaction sent, awaiting confirmation"
-                }));
-              } catch (err) {
-                console.error("Payment failed:", err);
-                sendUnityEvent("OnPaymentResult", JSON.stringify({
-                  ok: false,
-                  error: String(err)
-                }));
-              }
+            // handlePayment already sends a result, but keep legacy OnPaymentResult for compatibility
+            if (!result || !result.success) {
+              sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: result?.error || "payment_failed" }));
               break;
             }
+
+            // payment initiated, notify Unity it's pending (legacy event)
+            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: true, status: "pending", txHash: result.txHash }));
+
+            // Poll refetchHasPaid until on-chain state updates (same logic as GameEntry)
+            const maxAttempts = 30;
+            const intervalMs = 2000;
+            let attempts = 0;
+
+            const final = await new Promise((resolve) => {
+              const iv = setInterval(async () => {
+                attempts++;
+                try {
+                  const paid = await refetchHasPaid();
+                  if (paid?.data) {
+                    clearInterval(iv);
+                    resolve({ success: true });
+                  } else if (attempts >= maxAttempts) {
+                    clearInterval(iv);
+                    resolve({ success: false, error: "timeout_waiting_for_confirm" });
+                  }
+                } catch (pollErr) {
+                  console.error("Polling refetchHasPaid failed:", pollErr);
+                  if (attempts >= maxAttempts) {
+                    clearInterval(iv);
+                    resolve({ success: false, error: String(pollErr?.message ?? pollErr) });
+                  }
+                }
+              }, intervalMs);
+            });
+
+            if (final.success) {
+              sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: true, message: "Payment confirmed" }));
+              sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: true, address }));
+            } else {
+              sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: false, error: final.error }));
+              sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: final.error }));
+            }
+          } catch (err) {
+            console.error("Payment failed:", err);
+            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: String(err) }));
+          }
+          break;
+        }
 
         default:
           console.log("Unknown message type from Unity:", messageType);
@@ -310,36 +353,28 @@ export default function App() {
   // Send payment status when it changes
   useEffect(() => {
     if (unityLoaded && address && chainId === ABSTRACT_TESTNET_CHAIN_ID) {
-      sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
-        paid: Boolean(hasPaid), 
-        address: address
-      }));
+      sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: Boolean(hasPaid), address }));
     }
   }, [hasPaid, address, chainId, unityLoaded, sendUnityEvent]);
 
   // Expose functions to Unity
   useEffect(() => {
-    // Create a wrapper function that properly handles the call from Unity
     window.handleMessageFromUnity = (messageType, data) => {
       handleMessageFromUnity(messageType, data);
     };
-    
+
     window.sendToUnity = sendToUnity;
     window.pushStateToUnity = () => {
       if (!unityLoaded) return;
       sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
       sendUnityEvent("OnTimeLeftChanged", { timeLeft });
       sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
-      
-      // Also push payment status
+
       if (address && chainId === ABSTRACT_TESTNET_CHAIN_ID) {
-        sendUnityEvent("OnPaymentStatus", JSON.stringify({ 
-          paid: Boolean(hasPaid), 
-          address: address
-        }));
+        sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: Boolean(hasPaid), address }));
       }
     };
-    
+
     return () => {
       delete window.handleMessageFromUnity;
       delete window.sendToUnity;
@@ -348,16 +383,16 @@ export default function App() {
   }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, timeLeft, periodEnd, hasPaid, chainId]);
 
   // Notify Unity on changes
-  useEffect(() => { 
-    if (unityLoaded) sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null }); 
+  useEffect(() => {
+    if (unityLoaded) sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
   }, [authenticated, address, unityLoaded, sendUnityEvent]);
-  
-  useEffect(() => { 
-    if (unityLoaded) sendUnityEvent("OnTimeLeftChanged", { timeLeft }); 
+
+  useEffect(() => {
+    if (unityLoaded) sendUnityEvent("OnTimeLeftChanged", { timeLeft });
   }, [timeLeft, unityLoaded, sendUnityEvent]);
-  
-  useEffect(() => { 
-    if (unityLoaded) sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 }); 
+
+  useEffect(() => {
+    if (unityLoaded) sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 });
   }, [periodEnd, unityLoaded, sendUnityEvent]);
 
   // Load Unity WebGL
@@ -376,7 +411,8 @@ export default function App() {
     script.src = loaderUrl;
     script.async = true;
     script.onload = () => {
-      window.createUnityInstance(document.querySelector("#unity-canvas"), config)
+      window
+        .createUnityInstance(document.querySelector("#unity-canvas"), config)
         .then((unityInstance) => {
           window.unityInstance = unityInstance;
           unityRef.current = unityInstance;
@@ -392,21 +428,41 @@ export default function App() {
       document.body.removeChild(script);
       delete window.unityInstance;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once
 
   return (
-    <div id="unity-container" style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#000" }}>
+    <div
+      id="unity-container"
+      style={{
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
+        position: "relative",
+        background: "#000",
+      }}
+    >
       <canvas id="unity-canvas" style={{ width: "100%", height: "100%" }} />
 
-      <Toaster position="top-right" /> {/* <-- Add this */}
+      <Toaster position="top-right" />
 
       {!unityLoaded && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "center", alignItems: "center", backgroundColor: "#000", zIndex: 10 }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "#000",
+            zIndex: 10,
+          }}
+        >
           <img src="/logo.png" alt="Loading..." style={{ width: 200, animation: "pulse 1.5s ease-in-out infinite both" }} />
         </div>
       )}
 
-      {/* Privy login button */}
+      {/* Privy login button (optional) */}
       {/* {!authenticated && <PrivyLoginButton />} */}
 
       {unityLoaded && (
