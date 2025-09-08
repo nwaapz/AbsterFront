@@ -261,6 +261,28 @@ export default function App() {
           }
           break;
         }
+        case "TryPayForGame": {
+              console.log("Unity -> React: TryPayForGame :)");
+
+              try {
+                // reuse your existing payment logic
+                await handleJoin();
+
+                // Unity should get a simple OK result (payment pending confirmation)
+                sendUnityEvent("OnPaymentResult", JSON.stringify({
+                  ok: true,
+                  status: "pending",
+                  message: "Transaction sent, awaiting confirmation"
+                }));
+              } catch (err) {
+                console.error("Payment failed:", err);
+                sendUnityEvent("OnPaymentResult", JSON.stringify({
+                  ok: false,
+                  error: String(err)
+                }));
+              }
+              break;
+            }
 
         default:
           console.log("Unknown message type from Unity:", messageType);
