@@ -7,6 +7,7 @@ import GameEntry from "./GameEntry";
 import BalanceAndSend from "./BalanceAndSend";
 import PrivyLoginButton from "./PrivyLoginButton";
 import contractJson from "./abi/WagerPoolSingleEntry.json";
+import { handlePayment } from "./paymentHandler";
 
 const abi = contractJson.abi;
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
@@ -266,7 +267,7 @@ export default function App() {
 
               try {
                 // reuse your existing payment logic
-                await handleJoin();
+                await handlePayment();
 
                 // Unity should get a simple OK result (payment pending confirmation)
                 sendUnityEvent("OnPaymentResult", JSON.stringify({
