@@ -73,6 +73,29 @@ export default function App() {
     return () => clearInterval(interval);
   }, [periodEnd]);
 
+
+    const submitScore = async (data) => {    
+            try {
+              let score = parseInt(data);
+              const response = await fetch("https://apster-backend.onrender.com/api/submit-score", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  user: address,
+                  email: "",
+                  score,
+                }),
+              });
+
+              const data = await response.json();
+              if (data.ok) sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, status: "", message: "score submitted" }));
+              else sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: "score submit failed" }));
+            } catch (err) {
+              console.error("Submit error:", err);
+              sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: String(err) }));
+            }
+          };
+
   // React -> Unity helper
   const sendToUnity = useCallback((method, data) => {
     try {
@@ -110,6 +133,8 @@ export default function App() {
     }
     return true;
   }, [isConnected, chainId, switchChainAsync, sendUnityEvent]);
+
+  
 
   // Handle messages from Unity
   const handleMessageFromUnity = useCallback(async (messageType, data) => {
@@ -209,6 +234,19 @@ export default function App() {
           inProgressRef.current = false;
         }
         break;
+      }
+
+      case "SubmitScore": {
+        const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+        if (!addrToCheck) {
+          sendUnityEvent("OnScore", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
+          break;
+        }
+        submitScore(data);
+        break;
+       
+
+
       }
 
       case "RequestProfile": {
