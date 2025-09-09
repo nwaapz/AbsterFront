@@ -47,7 +47,7 @@ export default function App() {
   });
 
   // Fetch period from backend
-  const fetchPeriod = async () => {
+  const fetchPeriod = useCallback(async () => {
     try {
       const res = await fetch("https://apster-backend.onrender.com/api/period");
       const data = await res.json();
@@ -55,8 +55,9 @@ export default function App() {
     } catch (err) {
       console.error("Failed to fetch period:", err);
     }
-  };
-  useEffect(() => { fetchPeriod(); }, []);
+  }, []);
+
+  useEffect(() => { fetchPeriod(); }, [fetchPeriod]);
 
   // countdown timer
   useEffect(() => {
@@ -71,39 +72,21 @@ export default function App() {
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [periodEnd]);
+  }, [periodEnd, fetchPeriod]);
 
-
-    const submitScore = async (data) => {    
-            try {
-              let score = parseInt(data);
-              const response = await fetch("https://apster-backend.onrender.com/api/submit-score", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  user: address,
-                  email: "",
-                  score,
-                }),
-              });
-
-              const data = await response.json();
-              if (data.ok) sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, status: "", message: "score submitted" }));
-              else sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: "score submit failed" }));
-            } catch (err) {
-              console.error("Submit error:", err);
-              sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: String(err) }));
-            }
-          };
-
-  // React -> Unity helper
+  // ---------- sendToUnity / sendUnityEvent ----------
   const sendToUnity = useCallback((method, data) => {
     try {
+      const payload = typeof data === "string" ? data : JSON.stringify(data);
       if (window.unityInstance?.SendMessage) {
-        const payload = typeof data === "string" ? data : JSON.stringify(data);
         window.unityInstance.SendMessage("JSBridge", method, payload);
       } else {
-        console.warn("Unity instance not ready for message:", method);
+        // fallback attempt if unityInstance exists but SendMessage not found
+        if (window.unityInstance && typeof window.unityInstance.SendMessage !== "function") {
+          console.warn("unityInstance exists but SendMessage not a function", window.unityInstance);
+        } else {
+          console.warn("Unity instance not ready for message:", method, payload);
+        }
       }
     } catch (e) {
       console.error("Error in sendToUnity:", e);
@@ -111,11 +94,15 @@ export default function App() {
   }, []);
 
   const sendUnityEvent = useCallback((method, payload = "") => {
-    if (!unityLoaded) return;
+    if (!unityLoaded) {
+      // option: queue outgoing messages if needed
+      console.warn("sendUnityEvent skipped, unity not loaded:", method, payload);
+      return;
+    }
     try { sendToUnity(method, payload); } catch (e) { console.warn("sendUnityEvent failed", e); }
   }, [unityLoaded, sendToUnity]);
 
-  // Helper to ensure connected & correct chain
+  // ---------- Helper: ensure correct chain ----------
   const ensureChain = useCallback(async () => {
     if (!isConnected) {
       sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "not_connected" }));
@@ -134,15 +121,62 @@ export default function App() {
     return true;
   }, [isConnected, chainId, switchChainAsync, sendUnityEvent]);
 
-  
+  // ---------- submitScore (safe, logged, validated) ----------
+  const submitScore = useCallback(async (rawData) => {
+    console.log("submitScore called with:", rawData, "address:", address);
+    try {
+      const score = Number.parseInt(String(rawData).trim(), 10);
+      if (Number.isNaN(score)) {
+        console.warn("submitScore: invalid score", rawData);
+        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: "invalid_score" }));
+        return;
+      }
 
-  // Handle messages from Unity
+      // Use configured API base if available
+      const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+      const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/submit-score`;
+
+      console.log("submitScore: sending POST to", backendUrl, { user: address, score });
+
+      const response = await fetch(backendUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user: address,
+          email: "",
+          score,
+        }),
+      });
+
+      console.log("submitScore: fetch finished status:", response.status);
+
+      let json = null;
+      try {
+        json = await response.json();
+      } catch (parseErr) {
+        console.error("submitScore: failed to parse JSON response:", parseErr);
+      }
+      console.log("submitScore: backend json:", json);
+
+      if (json && json.ok) {
+        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, status: "", message: "score submitted", score }));
+      } else {
+        const reason = (json && json.error) || `http_${response.status}`;
+        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: `score submit failed: ${reason}` }));
+      }
+    } catch (err) {
+      console.error("Submit error:", err);
+      sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: String(err) }));
+    }
+  }, [address, sendUnityEvent]);
+
+  // ---------- Handle messages from Unity ----------
   const handleMessageFromUnity = useCallback(async (messageType, data) => {
-    console.log("Unity -> React:", messageType, data);
+    console.log("Unity -> React (handled):", messageType, data);
 
     switch (messageType) {
       case "AddTwelve": {
-        const result = parseInt(data) + 12;
+        const result = Number.parseInt(String(data), 10) + 12;
         sendUnityEvent("OnAddTwelveResult", result.toString());
         break;
       }
@@ -194,7 +228,8 @@ export default function App() {
           break;
         }
         try {
-          const backendUrl = `${import.meta.env.VITE_API_BASE}/api/update-profile`;
+          const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+          const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/update-profile`;
           const res = await fetch(backendUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -242,11 +277,9 @@ export default function App() {
           sendUnityEvent("OnScore", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
           break;
         }
-        submitScore(data);
+        console.log("handleMessageFromUnity: calling submitScore with", data);
+        await submitScore(data);
         break;
-       
-
-
       }
 
       case "RequestProfile": {
@@ -293,9 +326,6 @@ export default function App() {
           try {
             const tx = await sendTransaction({ to: CONTRACT_ADDRESS, value: ENTRY_FEE });
             console.log("Transaction initiated:", tx);
-
-            // Notify unity that tx was initiated (pending)
-            // tx may be a hash string or an object depending on connector; include what we have
             sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: true, status: "pending", tx: tx?.hash ?? tx }));
           } catch (err) {
             console.error("Payment failed or cancelled:", err);
@@ -319,15 +349,12 @@ export default function App() {
             } catch (pollErr) {
               console.error("Error polling hasPaid:", pollErr);
             }
-            // wait
             await new Promise((r) => setTimeout(r, intervalMs));
           }
 
           if (confirmed) {
-           // sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: true, message: "Payment confirmed" }));
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: true, address }));
           } else {
-         //   sendUnityEvent("OnPaymentConfirmed", JSON.stringify({ ok: false, error: "confirm_timeout" }));
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: "confirm_timeout" }));
           }
         } catch (err) {
@@ -354,6 +381,7 @@ export default function App() {
     ensureChain,
     resetSend,
     sendTransaction,
+    submitScore
   ]);
 
   // Send wallet connection status when connection state changes
@@ -370,11 +398,27 @@ export default function App() {
     }
   }, [hasPaid, address, chainId, unityLoaded, sendUnityEvent]);
 
-  // Expose functions to Unity
+  // Expose functions to Unity safely, queue messages that arrive early
   useEffect(() => {
+    // create a queue if not already present
+    if (!window._unityMessageQueue) window._unityMessageQueue = [];
+
     window.handleMessageFromUnity = (messageType, data) => {
-      handleMessageFromUnity(messageType, data);
+      try {
+        // If unityInstance not ready (or runtime still initializing), queue and return
+        if (!window.unityInstance || !unityLoaded) {
+          // store minimal info
+          window._unityMessageQueue.push({ messageType, data, ts: Date.now() });
+          console.warn("Message queued (unity not ready):", messageType, data);
+          return;
+        }
+        // pass to our internal handler
+        handleMessageFromUnity(messageType, data);
+      } catch (e) {
+        console.error("Error in window.handleMessageFromUnity wrapper:", e);
+      }
     };
+
     window.sendToUnity = sendToUnity;
     window.pushStateToUnity = () => {
       if (!unityLoaded) return;
@@ -393,6 +437,25 @@ export default function App() {
       delete window.pushStateToUnity;
     };
   }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, timeLeft, periodEnd, hasPaid, chainId]);
+
+  // flush queued Unity messages when unityLoaded becomes true
+  useEffect(() => {
+    if (!unityLoaded) return;
+    const q = window._unityMessageQueue || [];
+    if (!q.length) return;
+    console.log("Flushing queued Unity messages:", q.length);
+    // process queued messages in FIFO order
+    (async () => {
+      while (window._unityMessageQueue && window._unityMessageQueue.length) {
+        const item = window._unityMessageQueue.shift();
+        try {
+          await handleMessageFromUnity(item.messageType, item.data);
+        } catch (e) {
+          console.error("Error processing queued Unity message:", e);
+        }
+      }
+    })();
+  }, [unityLoaded, handleMessageFromUnity]);
 
   // Notify Unity on auth/time/period changes
   useEffect(() => { if (unityLoaded) sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null }); }, [authenticated, address, unityLoaded, sendUnityEvent]);
@@ -420,7 +483,10 @@ export default function App() {
           window.unityInstance = unityInstance;
           unityRef.current = unityInstance;
           setUnityLoaded(true);
-          window.pushStateToUnity?.();
+          // small delay to allow runtime to finish initializing in some edge cases
+          setTimeout(() => {
+            window.pushStateToUnity?.();
+          }, 50);
         })
         .catch((e) => console.error("createUnityInstance failed", e));
     };
@@ -428,7 +494,7 @@ export default function App() {
     document.body.appendChild(script);
     return () => {
       if (window.unityInstance?.Quit) window.unityInstance.Quit().catch(() => {});
-      document.body.removeChild(script);
+      try { document.body.removeChild(script); } catch {}
       delete window.unityInstance;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -445,9 +511,6 @@ export default function App() {
           <img src="/logo.png" alt="Loading..." style={{ width: 200, animation: "pulse 1.5s ease-in-out infinite both" }} />
         </div>
       )}
-
-      {/* optional Privy login button */}
-      {/* {!authenticated && <PrivyLoginButton />} */}
 
       {unityLoaded && (
         <>
