@@ -282,6 +282,37 @@ export default function App() {
         break;
       }
 
+      case "RequestLeaderBoard": {
+          // allow unauthenticated public requests; include user if connected
+          const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+          const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+
+          try {
+            const params = new URLSearchParams();
+            params.set("limit", "10"); // change if you want different default
+            if (addrToCheck) params.set("user", addrToCheck);
+
+            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/leaderboard?${params.toString()}`;
+            const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
+
+            if (!res.ok) {
+              console.log("RequestLeaderBoard: non-ok response", res.status);
+              const txt = await res.text().catch(()=>null);
+              sendUnityEvent("ONLB", JSON.stringify({ ok:false, leaderboard:[], player:null, error:`backend_${res.status}`, body: txt }));
+              break;
+            }
+            console.log("got data for leader board back from db");
+            const json = await res.json();
+            // forward raw payload to Unity; Unity expects JSON string in ONLB
+            sendUnityEvent("ONLB", JSON.stringify(json));
+          } catch (err) {
+            console.error("RequestLeaderBoard failed:", err);
+            sendUnityEvent("ONLB", JSON.stringify({ ok:false, leaderboard:[], player:null, error:String(err) }));
+          }
+          break;
+        }
+
+
       case "RequestProfile": {
         const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
         if (!addrToCheck) {
