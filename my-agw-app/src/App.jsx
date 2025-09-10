@@ -13,7 +13,7 @@ import { parseEther } from "viem";
 const abi = contractJson.abi;
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
-const ENTRY_FEE = parseEther("0.0001");
+const ENTRY_FEE = parseEther("0");
 
 export default function App() {
   const { address, status, isConnected, chainId } = useAccount();
