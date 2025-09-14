@@ -161,12 +161,11 @@ export default function App() {
   // -----------------------------
   // Profile / leaderboard
   // -----------------------------
-  const fetchProfile = useCallback(async () => {
+ const fetchProfile = useCallback(async () => {
   if (!address) return;
   try {
     const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/profile/${address}`);
     if (!res.ok) {
-      // 404 or other errors
       sendUnityEvent("OnProfileData", JSON.stringify({ ok: false, error: `http_${res.status}` }));
       return;
     }
@@ -177,6 +176,7 @@ export default function App() {
     sendUnityEvent("OnProfileData", JSON.stringify({ ok: false, error: String(err) }));
   }
 }, [API_BASE, address, sendUnityEvent]);
+
 
 
   const updateProfileName = useCallback(async (newName) => {
