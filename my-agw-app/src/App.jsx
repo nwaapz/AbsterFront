@@ -21,8 +21,12 @@ const CONTRACT_ADDRESS =
   "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
 const ENTRY_FEE = parseEther("0.0001");
+const API_BASE = import.meta.env?.VITE_API_BASE || "https://apster-backend.onrender.com";
 
 export default function App() {
+  // -----------------------------
+  // State & refs
+  // -----------------------------
   const { address, status, isConnected, chainId } = useAccount();
   const { authenticated, user } = usePrivy();
   const { login, link } = useAbstractPrivyLogin();
@@ -45,8 +49,6 @@ export default function App() {
     query: { enabled: !!address && isCorrectChain, retry: 3 },
   });
 
-  const API_BASE = import.meta.env?.VITE_API_BASE || "https://apster-backend.onrender.com";
-
   // -----------------------------
   // Unity messaging helpers
   // -----------------------------
@@ -66,7 +68,7 @@ export default function App() {
   );
 
   // -----------------------------
-  // Period fetch
+  // Fetch period
   // -----------------------------
   const fetchPeriod = useCallback(async () => {
     try {
@@ -117,7 +119,7 @@ export default function App() {
   );
 
   // -----------------------------
-  // Ensure correct chain
+  // Payment helpers
   // -----------------------------
   const ensureChain = useCallback(async () => {
     if (!isConnected) {
@@ -135,6 +137,79 @@ export default function App() {
     }
     return true;
   }, [isConnected, isCorrectChain, switchChainAsync, sendUnityEvent]);
+
+  const makePayment = useCallback(async () => {
+    if (!await ensureChain()) return;
+    try {
+      await sendTransaction({
+        to: CONTRACT_ADDRESS,
+        value: ENTRY_FEE,
+      });
+    } catch (err) {
+      sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: String(err) }));
+    }
+  }, [ensureChain, sendTransaction]);
+
+  useEffect(() => {
+    if (receipt) {
+      const success = receipt.status === "success" || receipt.status === 1;
+      sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: success, tx: txHash }));
+      refetchHasPaid();
+    }
+  }, [receipt, sendUnityEvent, txHash, refetchHasPaid]);
+
+  // -----------------------------
+  // Profile / leaderboard
+  // -----------------------------
+  const fetchProfile = useCallback(async () => {
+    if (!address) return;
+    try {
+      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/profile?user=${address}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      sendUnityEvent("OnProfileData", JSON.stringify(data));
+    } catch (err) {
+      console.error("Failed to fetch profile:", err);
+    }
+  }, [API_BASE, address, sendUnityEvent]);
+
+  const updateProfileName = useCallback(async (newName) => {
+    if (!address) return;
+    try {
+      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: address, name: newName }),
+      });
+      const data = await res.json();
+      sendUnityEvent("OnProfileUpdate", JSON.stringify(data));
+    } catch (err) {
+      console.error("Failed to update profile:", err);
+    }
+  }, [API_BASE, address, sendUnityEvent]);
+
+  const fetchLeaderboard = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/leaderboard`);
+      if (!res.ok) return;
+      const data = await res.json();
+      sendUnityEvent("OnLeaderboardData", JSON.stringify(data));
+    } catch (err) {
+      console.error("Failed to fetch leaderboard:", err);
+    }
+  }, [API_BASE, sendUnityEvent]);
+
+  const fetchMyScores = useCallback(async () => {
+    if (!address) return;
+    try {
+      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/my-scores?user=${address}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      sendUnityEvent("OnMyScoresData", JSON.stringify(data));
+    } catch (err) {
+      console.error("Failed to fetch my scores:", err);
+    }
+  }, [API_BASE, address, sendUnityEvent]);
 
   // -----------------------------
   // Unity message handler
@@ -169,9 +244,29 @@ export default function App() {
           }
           break;
 
+        case "MakePayment":
+          await makePayment();
+          break;
+
         case "SubmitScore":
           if (!isConnected || !address) return sendUnityEvent("OnScore", JSON.stringify({ ok: false, error: "not_connected" }));
           await submitScore(data);
+          break;
+
+        case "RequestProfile":
+          await fetchProfile();
+          break;
+
+        case "SetNewProfileName":
+          await updateProfileName(data);
+          break;
+
+        case "RequestTopScores":
+          await fetchLeaderboard();
+          break;
+
+        case "RequestMyScores":
+          await fetchMyScores();
           break;
 
         case "tryconnect":
@@ -192,7 +287,23 @@ export default function App() {
           console.log("Unknown message from Unity:", messageType);
       }
     },
-    [authenticated, address, isConnected, login, link, submitScore, sendUnityEvent, fetchPeriod, isCorrectChain, refetchHasPaid]
+    [
+      authenticated,
+      address,
+      isConnected,
+      login,
+      link,
+      submitScore,
+      sendUnityEvent,
+      fetchPeriod,
+      isCorrectChain,
+      refetchHasPaid,
+      makePayment,
+      fetchProfile,
+      updateProfileName,
+      fetchLeaderboard,
+      fetchMyScores,
+    ]
   );
 
   // -----------------------------
@@ -233,7 +344,7 @@ export default function App() {
   }, []);
 
   // -----------------------------
-  // Unity window helpers (single initialization)
+  // Unity window helpers
   // -----------------------------
   useEffect(() => {
     if (!window._unityMessageQueue) window._unityMessageQueue = [];
@@ -252,6 +363,9 @@ export default function App() {
         sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: Boolean(hasPaid), address }));
       }
       fetchPeriod().catch(() => {});
+      fetchProfile().catch(() => {});
+      fetchLeaderboard().catch(() => {});
+      fetchMyScores().catch(() => {});
     };
 
     return () => {
@@ -259,9 +373,9 @@ export default function App() {
       delete window.sendToUnity;
       delete window.pushStateToUnity;
     };
-  }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, hasPaid, chainId, fetchPeriod]);
+  }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, hasPaid, chainId, fetchPeriod, fetchProfile, fetchLeaderboard, fetchMyScores]);
 
-  // Flush queued messages exactly once
+  // Flush queued messages
   useEffect(() => {
     if (!unityLoaded) return;
     const q = window._unityMessageQueue || [];
@@ -271,6 +385,9 @@ export default function App() {
     }
   }, [unityLoaded, handleMessageFromUnity]);
 
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <div
       id="unity-container"
