@@ -54,8 +54,6 @@ export default function App() {
     const payload = typeof data === "string" ? data : JSON.stringify(data);
     if (window.unityInstance?.SendMessage) {
       window.unityInstance.SendMessage("JSBridge", method, payload);
-    } else {
-      console.warn("Unity instance not ready for message:", method, payload);
     }
   }, []);
 
@@ -68,7 +66,7 @@ export default function App() {
   );
 
   // -----------------------------
-  // Period fetch (new version)
+  // Period fetch
   // -----------------------------
   const fetchPeriod = useCallback(async () => {
     try {
@@ -92,52 +90,31 @@ export default function App() {
   // Score submission
   // -----------------------------
   const submitScore = useCallback(
-  async (rawData) => {
-    try {
-      const score = Number.parseInt(String(rawData).trim(), 10);
+    async (rawData) => {
+      const score = parseInt(String(rawData).trim(), 10);
       if (Number.isNaN(score)) {
-        sendUnityEvent(
-          "OnSubmitScore",
-          JSON.stringify({ ok: false, status: "", message: "invalid_score" })
-        );
+        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, message: "invalid_score" }));
         return;
       }
-
-      // Send to backend
-      const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/submit-score`;
-      const response = await fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: address, email: "", score }),
-      });
-
-      let json;
       try {
-        json = await response.json();
-      } catch {
-        json = null;
+        const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/submit-score`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user: address, email: "", score }),
+        });
+        const json = await res.json().catch(() => null);
+        if (json?.ok) {
+          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, message: "score submitted" }));
+        } else {
+          const reason = json?.error || `http_${res.status}`;
+          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, message: `score submit failed: ${reason}` }));
+        }
+      } catch (err) {
+        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, message: String(err) }));
       }
-
-      // Prepare payload for Unity (strictly matching TransactionStatus)
-      let unityPayload;
-      if (json?.ok) {
-        unityPayload = { ok: true, status: "", message: "score submitted" };
-      } else {
-        const reason = json?.error || `http_${response.status}`;
-        unityPayload = { ok: false, status: "", message: `score submit failed: ${reason}` };
-      }
-
-      sendUnityEvent("OnSubmitScore", JSON.stringify(unityPayload));
-    } catch (err) {
-      sendUnityEvent(
-        "OnSubmitScore",
-        JSON.stringify({ ok: false, status: "", message: String(err) })
-      );
-    }
-  },
-  [address, API_BASE, sendUnityEvent]
-);
-
+    },
+    [address, API_BASE, sendUnityEvent]
+  );
 
   // -----------------------------
   // Ensure correct chain
@@ -152,11 +129,7 @@ export default function App() {
         await switchChainAsync({ chainId: ABSTRACT_TESTNET_CHAIN_ID });
         return true;
       } catch (err) {
-        console.error("Switch chain failed:", err);
-        sendUnityEvent(
-          "OnPaymentResult",
-          JSON.stringify({ ok: false, error: "switch_failed", detail: String(err) })
-        );
+        sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "switch_failed", detail: String(err) }));
         return false;
       }
     }
@@ -164,16 +137,14 @@ export default function App() {
   }, [isConnected, isCorrectChain, switchChainAsync, sendUnityEvent]);
 
   // -----------------------------
-  // Unity message handler (old version)
+  // Unity message handler
   // -----------------------------
   const handleMessageFromUnity = useCallback(
     async (messageType, data) => {
       switch (messageType) {
-        case "AddTwelve": {
-          const result = Number.parseInt(String(data), 10) + 12;
-          sendUnityEvent("OnAddTwelveResult", result.toString());
+        case "AddTwelve":
+          sendUnityEvent("OnAddTwelveResult", (parseInt(data, 10) + 12).toString());
           break;
-        }
 
         case "RequestAuthState":
           sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
@@ -188,14 +159,8 @@ export default function App() {
           break;
 
         case "CheckPaymentStatus":
-          if (!address) {
-            sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address: null, error: "not_connected" }));
-            break;
-          }
-          if (!isCorrectChain) {
-            sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: "wrong_chain" }));
-            break;
-          }
+          if (!address) return sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address: null, error: "not_connected" }));
+          if (!isCorrectChain) return sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: "wrong_chain" }));
           try {
             const result = await refetchHasPaid();
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: Boolean(result.data), address }));
@@ -204,122 +169,8 @@ export default function App() {
           }
           break;
 
-        case "SetNewProfileName": {
-          const newName = (data && String(data).trim()) || "";
-          if (!newName) {
-            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "empty_name" }));
-            break;
-          }
-          if (!address) {
-            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "wallet_not_connected" }));
-            break;
-          }
-          try {
-            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/update-profile`;
-            const res = await fetch(backendUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user: address, profile_name: newName }),
-            });
-            let json;
-            try {
-              const text = await res.text();
-              json = text ? JSON.parse(text) : { ok: false, error: "empty_response" };
-            } catch {
-              json = { ok: false, error: "invalid_json" };
-            }
-            if (json.ok) sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: true, profile: newName }));
-            else sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: json.error || "unknown_error" }));
-          } catch (err) {
-            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: String(err) }));
-          }
-          break;
-        }
-
-        case "RequestProfile": {
-          const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
-          if (!addrToCheck) {
-            sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
-            break;
-          }
-          try {
-            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/profile/${encodeURIComponent(addrToCheck)}`;
-            const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
-            if (res.status === 404) {
-              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false }));
-              break;
-            }
-            if (!res.ok) {
-              const txt = await res.text().catch(() => null);
-              sendUnityEvent(
-                "OnProfileResult",
-                JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt })
-              );
-              break;
-            }
-            const json = await res.json();
-            const profileName = json.profile_name ?? json.profile ?? null;
-            sendUnityEvent(
-              "OnProfileResult",
-              JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) })
-            );
-          } catch (err) {
-            sendUnityEvent(
-              "OnProfileResult",
-              JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) })
-            );
-          }
-          break;
-        }
-
-        case "RequestLeaderBoard": {
-          const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
-          try {
-            const params = new URLSearchParams();
-            params.set("limit", "10");
-            if (addrToCheck) params.set("user", addrToCheck);
-            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/leaderboard?${params.toString()}`;
-            const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
-            if (!res.ok) {
-              const txt = await res.text().catch(() => null);
-              sendUnityEvent("ONLB", JSON.stringify({ ok: false, error: `backend_${res.status}`, body: txt }));
-              break;
-            }
-            const json = await res.json();
-            sendUnityEvent("ONLB", JSON.stringify({ ok: true, leaderboard: json }));
-          } catch (err) {
-            sendUnityEvent("ONLB", JSON.stringify({ ok: false, error: String(err) }));
-          }
-          break;
-        }
-
-        case "TryPayForGame": {
-          if (!address) {
-            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "not_connected" }));
-            break;
-          }
-          if (!isCorrectChain) {
-            try {
-              await switchChainAsync({ chainId: ABSTRACT_TESTNET_CHAIN_ID });
-            } catch (err) {
-              sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "switch_failed", detail: String(err) }));
-              break;
-            }
-          }
-          try {
-            const tx = await sendTransaction({ to: CONTRACT_ADDRESS, value: ENTRY_FEE });
-            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: true, txHash: tx?.hash || null }));
-          } catch (err) {
-            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: String(err) }));
-          }
-          break;
-        }
-
         case "SubmitScore":
-          if (!isConnected || !address) {
-            sendUnityEvent("OnScore", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
-            break;
-          }
+          if (!isConnected || !address) return sendUnityEvent("OnScore", JSON.stringify({ ok: false, error: "not_connected" }));
           await submitScore(data);
           break;
 
@@ -338,24 +189,10 @@ export default function App() {
           break;
 
         default:
-          console.log("Unknown message type from Unity:", messageType);
+          console.log("Unknown message from Unity:", messageType);
       }
     },
-    [
-      authenticated,
-      address,
-      isConnected,
-      chainId,
-      login,
-      link,
-      refetchHasPaid,
-      submitScore,
-      sendUnityEvent,
-      fetchPeriod,
-      isCorrectChain,
-      switchChainAsync,
-      sendTransaction,
-    ]
+    [authenticated, address, isConnected, login, link, submitScore, sendUnityEvent, fetchPeriod, isCorrectChain, refetchHasPaid]
   );
 
   // -----------------------------
@@ -390,21 +227,19 @@ export default function App() {
 
     return () => {
       if (window.unityInstance?.Quit) window.unityInstance.Quit().catch(() => {});
-      try {
-        document.body.removeChild(script);
-      } catch {}
+      try { document.body.removeChild(script); } catch {}
       delete window.unityInstance;
     };
   }, []);
 
   // -----------------------------
-  // Window helpers
+  // Unity window helpers (single initialization)
   // -----------------------------
   useEffect(() => {
     if (!window._unityMessageQueue) window._unityMessageQueue = [];
     window.handleMessageFromUnity = (msg, data) => {
-      if (!window.unityInstance || !unityLoaded) {
-        window._unityMessageQueue.push({ messageType: msg, data, ts: Date.now() });
+      if (!unityLoaded || !window.unityInstance) {
+        window._unityMessageQueue.push({ messageType: msg, data });
         return;
       }
       handleMessageFromUnity(msg, data);
@@ -426,6 +261,7 @@ export default function App() {
     };
   }, [handleMessageFromUnity, sendToUnity, sendUnityEvent, unityLoaded, authenticated, address, hasPaid, chainId, fetchPeriod]);
 
+  // Flush queued messages exactly once
   useEffect(() => {
     if (!unityLoaded) return;
     const q = window._unityMessageQueue || [];
@@ -444,22 +280,16 @@ export default function App() {
       <Toaster position="top-right" />
 
       {!unityLoaded && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "#000",
-            zIndex: 10,
-          }}
-        >
-          <img
-            src="/logo.png"
-            alt="Loading..."
-            style={{ width: 200, animation: "pulse 1.5s ease-in-out infinite both" }}
-          />
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#000",
+          zIndex: 10,
+        }}>
+          <img src="/logo.png" alt="Loading..." style={{ width: 200, animation: "pulse 1.5s ease-in-out infinite both" }} />
         </div>
       )}
 
