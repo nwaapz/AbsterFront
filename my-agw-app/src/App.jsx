@@ -60,27 +60,7 @@ export default function App() {
   useEffect(() => { fetchPeriod(); }, [fetchPeriod]);
 
  
- // countdown timer
-  useEffect(() => {
-    if (!periodEnd) return;
-
-    const interval = setInterval(() => {
-      const left = periodEnd - Date.now();
-
-      if (left <= 0) {
-        setTimeLeft(0);
-        setTimeout(fetchPeriod, 1000);
-      } else {
-        setTimeLeft(left);
-      }
-
-      if (unityLoaded) {
-        sendUnityEvent("OnTimeLeftChanged", JSON.stringify({ timeLeft: left <= 0 ? 0 : left }));
-      }
-    }, 200);
-
-    return () => clearInterval(interval);
-  }, [periodEnd, fetchPeriod, unityLoaded, sendUnityEvent]);
+ 
 
 
   // ---------- sendToUnity / sendUnityEvent ----------
@@ -423,6 +403,28 @@ export default function App() {
     sendTransaction,
     submitScore
   ]);
+
+  // countdown timer
+  useEffect(() => {
+    if (!periodEnd) return;
+
+    const interval = setInterval(() => {
+      const left = periodEnd - Date.now();
+
+      if (left <= 0) {
+        setTimeLeft(0);
+        setTimeout(fetchPeriod, 1000);
+      } else {
+        setTimeLeft(left);
+      }
+
+      if (unityLoaded) {
+        sendUnityEvent("OnTimeLeftChanged", JSON.stringify({ timeLeft: left <= 0 ? 0 : left }));
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [periodEnd, fetchPeriod, unityLoaded, sendUnityEvent]);
 
   // Send wallet connection status when connection state changes
   useEffect(() => {
