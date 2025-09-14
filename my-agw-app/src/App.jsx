@@ -92,43 +92,52 @@ export default function App() {
   // Score submission
   // -----------------------------
   const submitScore = useCallback(
-    async (rawData) => {
-      try {
-        const score = Number.parseInt(String(rawData).trim(), 10);
-        if (Number.isNaN(score)) {
-          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: "invalid_score" }));
-          return;
-        }
-
-        const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/submit-score`;
-        const response = await fetch(backendUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user: address, email: "", score }),
-        });
-
-        let json;
-        try {
-          json = await response.json();
-        } catch {
-          json = null;
-        }
-
-        if (json?.ok) {
-          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, status: "", message: "score submitted", score }));
-        } else {
-          const reason = json?.error || `http_${response.status}`;
-          sendUnityEvent(
-            "OnSubmitScore",
-            JSON.stringify({ ok: false, status: "", message: `score submit failed: ${reason}` })
-          );
-        }
-      } catch (err) {
-        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: String(err) }));
+  async (rawData) => {
+    try {
+      const score = Number.parseInt(String(rawData).trim(), 10);
+      if (Number.isNaN(score)) {
+        sendUnityEvent(
+          "OnSubmitScore",
+          JSON.stringify({ ok: false, status: "", message: "invalid_score" })
+        );
+        return;
       }
-    },
-    [address, API_BASE, sendUnityEvent]
-  );
+
+      // Send to backend
+      const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/submit-score`;
+      const response = await fetch(backendUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: address, email: "", score }),
+      });
+
+      let json;
+      try {
+        json = await response.json();
+      } catch {
+        json = null;
+      }
+
+      // Prepare payload for Unity (strictly matching TransactionStatus)
+      let unityPayload;
+      if (json?.ok) {
+        unityPayload = { ok: true, status: "", message: "score submitted" };
+      } else {
+        const reason = json?.error || `http_${response.status}`;
+        unityPayload = { ok: false, status: "", message: `score submit failed: ${reason}` };
+      }
+
+      sendUnityEvent("OnSubmitScore", JSON.stringify(unityPayload));
+    } catch (err) {
+      sendUnityEvent(
+        "OnSubmitScore",
+        JSON.stringify({ ok: false, status: "", message: String(err) })
+      );
+    }
+  },
+  [address, API_BASE, sendUnityEvent]
+);
+
 
   // -----------------------------
   // Ensure correct chain
