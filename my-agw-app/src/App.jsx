@@ -162,31 +162,39 @@ export default function App() {
   // Profile / leaderboard
   // -----------------------------
   const fetchProfile = useCallback(async () => {
-    if (!address) return;
-    try {
-      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/profile?user=${address}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      sendUnityEvent("OnProfileData", JSON.stringify(data));
-    } catch (err) {
-      console.error("Failed to fetch profile:", err);
+  if (!address) return;
+  try {
+    const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/profile/${address}`);
+    if (!res.ok) {
+      // 404 or other errors
+      sendUnityEvent("OnProfileData", JSON.stringify({ ok: false, error: `http_${res.status}` }));
+      return;
     }
-  }, [API_BASE, address, sendUnityEvent]);
+    const data = await res.json();
+    sendUnityEvent("OnProfileData", JSON.stringify(data));
+  } catch (err) {
+    console.error("Failed to fetch profile:", err);
+    sendUnityEvent("OnProfileData", JSON.stringify({ ok: false, error: String(err) }));
+  }
+}, [API_BASE, address, sendUnityEvent]);
+
 
   const updateProfileName = useCallback(async (newName) => {
-    if (!address) return;
-    try {
-      const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/profile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: address, name: newName }),
-      });
-      const data = await res.json();
-      sendUnityEvent("OnProfileUpdate", JSON.stringify(data));
-    } catch (err) {
-      console.error("Failed to update profile:", err);
-    }
-  }, [API_BASE, address, sendUnityEvent]);
+  if (!address) return;
+  try {
+    const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/update-profile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: address, profile_name: newName }),
+    });
+    const data = await res.json();
+    sendUnityEvent("OnProfileUpdate", JSON.stringify(data));
+  } catch (err) {
+    console.error("Failed to update profile:", err);
+    sendUnityEvent("OnProfileUpdate", JSON.stringify({ ok: false, error: String(err) }));
+  }
+}, [API_BASE, address, sendUnityEvent]);
+
 
   const fetchLeaderboard = useCallback(async () => {
     try {
