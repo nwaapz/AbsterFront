@@ -1,5 +1,5 @@
 // App.jsx
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import {
   useAccount,
   useReadContract,
@@ -20,19 +20,20 @@ const CONTRACT_ADDRESS =
   import.meta.env.VITE_CONTRACT_ADDRESS ||
   "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
 const ABSTRACT_TESTNET_CHAIN_ID = 11124;
+const ENTRY_FEE = parseEther("0.0001");
 
 export default function App() {
   const { address, status, isConnected, chainId } = useAccount();
   const { authenticated, user } = usePrivy();
   const { login, link } = useAbstractPrivyLogin();
-  const [unityLoaded, setUnityLoaded] = React.useState(false);
+  const [unityLoaded, setUnityLoaded] = useState(false);
   const unityRef = useRef(null);
   const inProgressRef = useRef(false);
 
   const connectionState = { address, status, isConnected, chainId, authenticated, user };
 
   const { switchChainAsync } = useSwitchChain();
-  const { data: txHash, sendTransaction } = useSendTransaction();
+  const { data: txHash, sendTransaction, reset: resetSend } = useSendTransaction();
   const { data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
 
   const isCorrectChain = chainId === ABSTRACT_TESTNET_CHAIN_ID;
@@ -67,7 +68,7 @@ export default function App() {
   );
 
   // -----------------------------
-  // Backend period fetch (direct to Unity)
+  // Period fetch (new version)
   // -----------------------------
   const fetchPeriod = useCallback(async () => {
     try {
@@ -95,7 +96,7 @@ export default function App() {
       try {
         const score = Number.parseInt(String(rawData).trim(), 10);
         if (Number.isNaN(score)) {
-          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, message: "invalid_score" }));
+          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: "invalid_score" }));
           return;
         }
 
@@ -113,26 +114,58 @@ export default function App() {
           json = null;
         }
 
-        if (json?.ok)
-          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, message: "score submitted", score }));
-        else
+        if (json?.ok) {
+          sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: true, status: "", message: "score submitted", score }));
+        } else {
+          const reason = json?.error || `http_${response.status}`;
           sendUnityEvent(
             "OnSubmitScore",
-            JSON.stringify({ ok: false, message: `score submit failed: ${json?.error ?? response.status}` })
+            JSON.stringify({ ok: false, status: "", message: `score submit failed: ${reason}` })
           );
+        }
       } catch (err) {
-        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, message: String(err) }));
+        sendUnityEvent("OnSubmitScore", JSON.stringify({ ok: false, status: "", message: String(err) }));
       }
     },
     [address, API_BASE, sendUnityEvent]
   );
 
   // -----------------------------
-  // Unity message handler
+  // Ensure correct chain
+  // -----------------------------
+  const ensureChain = useCallback(async () => {
+    if (!isConnected) {
+      sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "not_connected" }));
+      return false;
+    }
+    if (!isCorrectChain) {
+      try {
+        await switchChainAsync({ chainId: ABSTRACT_TESTNET_CHAIN_ID });
+        return true;
+      } catch (err) {
+        console.error("Switch chain failed:", err);
+        sendUnityEvent(
+          "OnPaymentResult",
+          JSON.stringify({ ok: false, error: "switch_failed", detail: String(err) })
+        );
+        return false;
+      }
+    }
+    return true;
+  }, [isConnected, isCorrectChain, switchChainAsync, sendUnityEvent]);
+
+  // -----------------------------
+  // Unity message handler (old version)
   // -----------------------------
   const handleMessageFromUnity = useCallback(
     async (messageType, data) => {
       switch (messageType) {
+        case "AddTwelve": {
+          const result = Number.parseInt(String(data), 10) + 12;
+          sendUnityEvent("OnAddTwelveResult", result.toString());
+          break;
+        }
+
         case "RequestAuthState":
           sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null });
           break;
@@ -150,7 +183,7 @@ export default function App() {
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address: null, error: "not_connected" }));
             break;
           }
-          if (chainId !== ABSTRACT_TESTNET_CHAIN_ID) {
+          if (!isCorrectChain) {
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: "wrong_chain" }));
             break;
           }
@@ -160,6 +193,125 @@ export default function App() {
           } catch (err) {
             sendUnityEvent("OnPaymentStatus", JSON.stringify({ paid: false, address, error: String(err) }));
           }
+          break;
+
+        case "SetNewProfileName": {
+          const newName = (data && String(data).trim()) || "";
+          if (!newName) {
+            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "empty_name" }));
+            break;
+          }
+          if (!address) {
+            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: "wallet_not_connected" }));
+            break;
+          }
+          try {
+            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/update-profile`;
+            const res = await fetch(backendUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user: address, profile_name: newName }),
+            });
+            let json;
+            try {
+              const text = await res.text();
+              json = text ? JSON.parse(text) : { ok: false, error: "empty_response" };
+            } catch {
+              json = { ok: false, error: "invalid_json" };
+            }
+            if (json.ok) sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: true, profile: newName }));
+            else sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: json.error || "unknown_error" }));
+          } catch (err) {
+            sendUnityEvent("OnSetProfileResult", JSON.stringify({ ok: false, error: String(err) }));
+          }
+          break;
+        }
+
+        case "RequestProfile": {
+          const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+          if (!addrToCheck) {
+            sendUnityEvent("OnProfileResult", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
+            break;
+          }
+          try {
+            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/profile/${encodeURIComponent(addrToCheck)}`;
+            const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
+            if (res.status === 404) {
+              sendUnityEvent("OnProfileResult", JSON.stringify({ ok: true, address: addrToCheck, profile: null, found: false }));
+              break;
+            }
+            if (!res.ok) {
+              const txt = await res.text().catch(() => null);
+              sendUnityEvent(
+                "OnProfileResult",
+                JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: `backend_${res.status}`, body: txt })
+              );
+              break;
+            }
+            const json = await res.json();
+            const profileName = json.profile_name ?? json.profile ?? null;
+            sendUnityEvent(
+              "OnProfileResult",
+              JSON.stringify({ ok: true, address: addrToCheck, profile: profileName, found: Boolean(profileName) })
+            );
+          } catch (err) {
+            sendUnityEvent(
+              "OnProfileResult",
+              JSON.stringify({ ok: false, address: addrToCheck, profile: null, error: String(err) })
+            );
+          }
+          break;
+        }
+
+        case "RequestLeaderBoard": {
+          const addrToCheck = (isConnected && address) ? String(address).trim().toLowerCase() : "";
+          try {
+            const params = new URLSearchParams();
+            params.set("limit", "10");
+            if (addrToCheck) params.set("user", addrToCheck);
+            const backendUrl = `${API_BASE.replace(/\/$/, "")}/api/leaderboard?${params.toString()}`;
+            const res = await fetch(backendUrl, { method: "GET", credentials: "omit" });
+            if (!res.ok) {
+              const txt = await res.text().catch(() => null);
+              sendUnityEvent("ONLB", JSON.stringify({ ok: false, error: `backend_${res.status}`, body: txt }));
+              break;
+            }
+            const json = await res.json();
+            sendUnityEvent("ONLB", JSON.stringify({ ok: true, leaderboard: json }));
+          } catch (err) {
+            sendUnityEvent("ONLB", JSON.stringify({ ok: false, error: String(err) }));
+          }
+          break;
+        }
+
+        case "TryPayForGame": {
+          if (!address) {
+            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "not_connected" }));
+            break;
+          }
+          if (!isCorrectChain) {
+            try {
+              await switchChainAsync({ chainId: ABSTRACT_TESTNET_CHAIN_ID });
+            } catch (err) {
+              sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: "switch_failed", detail: String(err) }));
+              break;
+            }
+          }
+          try {
+            const tx = await sendTransaction({ to: CONTRACT_ADDRESS, value: ENTRY_FEE });
+            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: true, txHash: tx?.hash || null }));
+          } catch (err) {
+            sendUnityEvent("OnPaymentResult", JSON.stringify({ ok: false, error: String(err) }));
+          }
+          break;
+        }
+
+        case "SubmitScore":
+          if (!isConnected || !address) {
+            sendUnityEvent("OnScore", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
+            break;
+          }
+          await submitScore(data);
           break;
 
         case "tryconnect":
@@ -176,19 +328,25 @@ export default function App() {
           }
           break;
 
-        case "SubmitScore":
-          if (!isConnected || !address) {
-            sendUnityEvent("OnScore", JSON.stringify({ ok: false, address: "", profile: null, error: "not_connected" }));
-            break;
-          }
-          await submitScore(data);
-          break;
-
         default:
           console.log("Unknown message type from Unity:", messageType);
       }
     },
-    [authenticated, address, isConnected, chainId, login, link, refetchHasPaid, submitScore, sendUnityEvent, fetchPeriod]
+    [
+      authenticated,
+      address,
+      isConnected,
+      chainId,
+      login,
+      link,
+      refetchHasPaid,
+      submitScore,
+      sendUnityEvent,
+      fetchPeriod,
+      isCorrectChain,
+      switchChainAsync,
+      sendTransaction,
+    ]
   );
 
   // -----------------------------
@@ -231,7 +389,7 @@ export default function App() {
   }, []);
 
   // -----------------------------
-  // Expose window helpers
+  // Window helpers
   // -----------------------------
   useEffect(() => {
     if (!window._unityMessageQueue) window._unityMessageQueue = [];
