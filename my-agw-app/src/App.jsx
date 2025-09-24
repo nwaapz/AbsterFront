@@ -10,6 +10,8 @@ import contractJson from "./abi/WagerPoolSingleEntry.json";
 import { Toaster } from "react-hot-toast";
 import { parseEther } from "viem";
 import "./App.css";
+import { useBalance } from "wagmi";
+
 
 const abi = contractJson.abi;
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
@@ -160,11 +162,38 @@ export default function App() {
     }
   }, [address, sendUnityEvent]);
 
+const { data: balanceData } = useBalance({
+  address,
+  query: {
+    enabled: !!address,
+    watch: true, // 👈 keeps balance updated automatically
+  },
+});
+
   // ---------- Handle messages from Unity ----------
   const handleMessageFromUnity = useCallback(async (messageType, data) => {
     console.log("Unity -> React (handled):", messageType, data);
 
     switch (messageType) {
+
+      case "RequestBalance": {
+      if (!address) {
+        sendUnityEvent("OnBalance", JSON.stringify({ ok: false, address: null, error: "not_connected" }));
+        break;
+      }
+      try {
+        const result = await refetchBalance();
+        const ethValue = result?.data?.formatted || "0";
+        sendUnityEvent("OnBalance", JSON.stringify({ ok: true, address, balance: ethValue }));
+      } catch (err) {
+        console.error("Error fetching balance:", err);
+        sendUnityEvent("OnBalance", JSON.stringify({ ok: false, address, error: String(err) }));
+      }
+      break;
+    }
+
+
+
       case "AddTwelve": {
         const result = Number.parseInt(String(data), 10) + 12;
         sendUnityEvent("OnAddTwelveResult", result.toString());
@@ -504,7 +533,18 @@ export default function App() {
   useEffect(() => { if (unityLoaded) sendUnityEvent("OnAuthChanged", { authenticated: Boolean(authenticated), address: address || null }); }, [authenticated, address, unityLoaded, sendUnityEvent]);
   useEffect(() => { if (unityLoaded) sendUnityEvent("OnTimeLeftChanged", { timeLeft }); }, [timeLeft, unityLoaded, sendUnityEvent]);
   useEffect(() => { if (unityLoaded) sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 }); }, [periodEnd, unityLoaded, sendUnityEvent]);
-
+  //update user balance on change
+  useEffect(() => {
+    if (balanceData && address) {
+      const payload = {
+        ok: true,
+        address,
+        balance: balanceData.formatted,
+      };
+      console.log("📤 Auto-sending balance to Unity:", payload);
+      sendUnityEvent("OnBalance", JSON.stringify(payload));
+    }
+  }, [balanceData, address]);
   // Load Unity WebGL
   useEffect(() => {
     const loaderUrl = "/Build/v1.loader.js";

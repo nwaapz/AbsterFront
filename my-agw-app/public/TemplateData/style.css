@@ -1,100 +1,178 @@
+/* =========================
+   Unity WebGL - Full page CSS
+   Drop this into TemplateData/style.css or inside a <style> tag
+   ========================= */
+
+/* Safety reset */
+* { box-sizing: border-box; }
+
+/* Page background and remove default scrollbars/margins */
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  background: #111;
-  overflow: hidden; /* avoid scrollbars */
+  min-height: 100%;
+  background: #111;         /* visible behind letterbox bars */
+  overflow: hidden;         /* hide scrollbars */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Container fills the whole viewport */
+/* Container: fill viewport and stay fixed (avoids scroll) */
+/* Use left/right instead of width:100vw to avoid a 1px overflow on some browsers */
 #unity-container {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  right: 0;                 /* ensures full-bleed avoiding vw-subpixel issues */
+  /* height fallbacks: prefer dynamic vh (100dvh) for mobile address bar handling */
+  height: 100dvh;           /* modern browsers */
+  min-height: 100vh;        /* fallback */
   background: black;
+  display: block;
+  margin: 0;
+  padding: 0;
+  z-index: 0;               /* canvas sits under overlays */
+  touch-action: none;       /* prevent accidental page scrolling on mobile inside canvas */
 }
 
-/* Canvas fills container */
+/* Canvas: scale to fill container while preserving aspect ratio */
+/* object-fit: contain -> letterbox (recommended). Change to 'cover' if you want cropping instead */
 #unity-canvas {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: contain; /* preserve aspect ratio, adds black bars if needed */
+  object-fit: contain;      /* preserve aspect ratio; letterboxes if needed */
+  background: transparent;  /* engine will draw the frame */
+  outline: none;            /* prevents focus ring around canvas (if you need focus-visible, change this) */
 }
 
-/* Mobile: also fullscreen */
+/* Mobile-specific classes (kept for compatibility with template JS) */
 #unity-container.unity-mobile,
 .unity-mobile #unity-canvas {
+  left: 0;
+  right: 0;
+  height: 100dvh;
+  min-height: 100vh;
   width: 100%;
-  height: 100%;
 }
 
-/* Loading bar centered */
+/* Loading/progress centered overlay */
 #unity-loading-bar {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  display: none;
+  display: none;            /* toggled by script during load */
+  pointer-events: none;
+  z-index: 1000;
 }
 
+/* Progress bar images - script toggles width of the 'full' bar */
 #unity-logo {
   width: 154px;
   height: 130px;
-  background: url('unity-logo-dark.png') no-repeat center;
+  background-repeat: no-repeat;
+  background-position: center;
 }
-
 #unity-progress-bar-empty {
   width: 141px;
   height: 18px;
   margin-top: 10px;
-  margin-left: 6.5px;
-  background: url('progress-bar-empty-dark.png') no-repeat center;
+  background-repeat: no-repeat;
+  background-position: center;
 }
-
 #unity-progress-bar-full {
   width: 0%;
   height: 18px;
   margin-top: 10px;
-  background: url('progress-bar-full-dark.png') no-repeat center;
+  background-repeat: no-repeat;
+  background-position: center;
+  transition: width 120ms linear; /* smooth progress */
 }
 
-/* Footer hidden on mobile */
-#unity-footer { position: relative; }
-.unity-mobile #unity-footer { display: none; }
+/* Footer - positioned above canvas but doesn't affect layout */
+#unity-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  z-index: 1000;
+  pointer-events: auto;
+}
 
+/* Hide footer on mobile builds (template behavior) */
+.unity-mobile #unity-footer {
+  display: none;
+}
+
+/* Footer elements */
 #unity-logo-title-footer {
-  float: left;
   width: 102px;
   height: 38px;
-  background: url('unity-logo-title-footer.png') no-repeat center;
+  background-repeat: no-repeat;
+  background-position: center;
 }
-
 #unity-build-title {
-  float: right;
-  margin-right: 10px;
   line-height: 38px;
-  font-family: arial;
+  font-family: Arial, sans-serif;
   font-size: 18px;
 }
-
 #unity-fullscreen-button {
   cursor: pointer;
-  float: right;
   width: 38px;
   height: 38px;
-  background: url('fullscreen-button.png') no-repeat center;
+  background-repeat: no-repeat;
+  background-position: center;
 }
 
+/* Warning banner (centered horizontally, near top) */
 #unity-warning {
   position: absolute;
   left: 50%;
   top: 5%;
-  transform: translate(-50%);
-  background: white;
-  padding: 10px;
+  transform: translate(-50%, 0);
+  background: rgba(255,255,255,0.95);
+  color: #000;
+  padding: 10px 14px;
+  border-radius: 4px;
   display: none;
+  z-index: 10000;
+  pointer-events: auto;
+  max-width: calc(100% - 24px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  text-align: center;
 }
+
+/* Small helpers to avoid subpixel artifacts in some browsers */
+html, body, #unity-container, #unity-canvas {
+  -webkit-backface-visibility: hidden;
+  -webkit-transform: translateZ(0);
+}
+
+/* Accessibility: if you want keyboard focus visible, uncomment and adjust this instead of removing outlines globally */
+/*
+#unity-canvas:focus-visible {
+  outline: 3px solid #3b82f6;
+  outline-offset: 2px;
+}
+*/
+
+/* Optional: ensure that interactive overlay controls are above everything */
+#unity-loading-bar,
+#unity-footer,
+#unity-warning {
+  z-index: 1000;
+}
+
+/* If you still see a 1px white line on some narrow screens:
+   replace #unity-container's left/right with this fallback:
+   left: 0; right: 0; width: 100%; max-width: 100%;
+   (But the current left/right approach should avoid common 1px vw issues.)
+*/
