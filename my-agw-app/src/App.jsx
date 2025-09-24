@@ -62,7 +62,55 @@ export default function App() {
 
   useEffect(() => { fetchPeriod(); }, [fetchPeriod]);
 
+  // call before a match starts: ask server for authoritative board
+const startSession = useCallback(async (address, opts = {}) => {
+  const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+  try {
+    const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/start-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const json = await res.json();
+    // backend returns { sessionId, expiresAt }
+    sendUnityEvent("OnStartSession", JSON.stringify({ ok:true, sessionId: json.sessionId, expiresAt: json.expiresAt }));
+    return json;
+  } catch (err) {
+    console.error("startSession failed", err);
+    sendUnityEvent("OnStartSession", JSON.stringify({ ok:false, error: String(err) }));
+    return null;
+  }
+}, [sendUnityEvent]);
+
+
+// submit replay at match end
+const submitReplay = useCallback(async ({ sessionId, replayArr, claimedScore }) => {
+  const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+  try {
+    const body = { user: address, sessionId, replay: replayArr, claimedScore };
+    const res = await fetch(`${API_BASE.replace(/\/$/, "")}/api/submit-replay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(()=>null);
+    if (res.ok && json && json.ok) {
+      sendUnityEvent("OnSubmitReplayResult", JSON.stringify({ ok:true, verifiedScore: json.verifiedScore, boardHash: json.boardHash }));
+      return json;
+    } else {
+      const reason = (json && json.error) || `http_${res.status}`;
+      sendUnityEvent("OnSubmitReplayResult", JSON.stringify({ ok:false, error: reason, verifiedScore: json?.verifiedScore || null }));
+      return null;
+    }
+  } catch (err) {
+    console.error("submitReplay failed", err);
+    sendUnityEvent("OnSubmitReplayResult", JSON.stringify({ ok:false, error: String(err) }));
+    return null;
+  }
+}, [address, sendUnityEvent]);
+
  
+
  
 
 
@@ -217,7 +265,35 @@ const handleMessageFromUnity = useCallback(async (messageType, data) => {
       break;
     }
 
-    // ... your existing cases follow here ...
+    case "RequestStartSession": {
+        // data may be JSON or plain (e.g., level etc.)
+        if (!address) {
+          sendUnityEvent("OnStartSession", JSON.stringify({ ok:false, error:"not_connected" }));
+          break;
+        }
+        let opts = {};
+        try { opts = data ? JSON.parse(data) : {}; } catch(e){ opts = {}; }
+        await startSession(address, opts);
+        break;
+      }
+
+    case "SubmitReplay": {
+        // data expected: JSON string { sessionId, replayArr, claimedScore }
+        try {
+          const payload = typeof data === "string" ? JSON.parse(data) : data;
+          const { sessionId, replayArr, claimedScore } = payload;
+          if (!sessionId || !Array.isArray(replayArr)) {
+            sendUnityEvent("OnSubmitReplayResult", JSON.stringify({ ok:false, error:"invalid_payload" }));
+            break;
+          }
+          await submitReplay({ sessionId, replayArr, claimedScore });
+        } catch (err) {
+          console.error("SubmitReplay handling error:", err);
+          sendUnityEvent("OnSubmitReplayResult", JSON.stringify({ ok:false, error: String(err) }));
+        }
+        break;
+    }
+
 
 
 
