@@ -162,28 +162,53 @@ export default function App() {
     }
   }, [address, sendUnityEvent]);
 
-const { data: balanceData } = useBalance({
+// ---------- balance hook (event-driven + refetch) ----------
+const { data: balanceData, refetch: refetchBalance } = useBalance({
   address,
-  query: {
-    enabled: !!address,
-    watch: true, // 👈 keeps balance updated automatically
-  },
+  chainId: ABSTRACT_TESTNET_CHAIN_ID, // ensure we query the testnet balance
+  watch: true, // auto-update when provider signals changes
 });
 
-  // ---------- Handle messages from Unity ----------
-  const handleMessageFromUnity = useCallback(async (messageType, data) => {
-    console.log("Unity -> React (handled):", messageType, data);
+// Auto-push balance updates to Unity when balanceData changes
+useEffect(() => {
+  if (!balanceData || !address) return;
+  try {
+    const payload = {
+      ok: true,
+      address,
+      balance: balanceData.formatted ?? (balanceData.value ? formatEther(balanceData.value) : "0"),
+    };
+    console.log("📤 Auto-sending balance to Unity:", payload);
+    sendUnityEvent("OnBalance", JSON.stringify(payload));
+  } catch (e) {
+    console.error("Failed to send balance to Unity:", e);
+  }
+}, [balanceData, address, sendUnityEvent]);
 
-    switch (messageType) {
+// ---------- Handle messages from Unity ----------
+const handleMessageFromUnity = useCallback(async (messageType, data) => {
+  console.log("Unity -> React (handled):", messageType, data);
 
-      case "RequestBalance": {
+  switch (messageType) {
+
+    // Manual request from Unity — force a fresh read and reply
+    case "RequestBalance": {
       if (!address) {
         sendUnityEvent("OnBalance", JSON.stringify({ ok: false, address: null, error: "not_connected" }));
         break;
       }
+
+      if (!refetchBalance) {
+        // defensive fallback (shouldn't happen if useBalance was set up)
+        console.warn("refetchBalance not available; sending existing cached value.");
+        const ethValue = balanceData?.formatted ?? (balanceData?.value ? formatEther(balanceData.value) : "0");
+        sendUnityEvent("OnBalance", JSON.stringify({ ok: true, address, balance: ethValue }));
+        break;
+      }
+
       try {
-        const result = await refetchBalance();
-        const ethValue = result?.data?.formatted || "0";
+        const result = await refetchBalance(); // <- Fix: use refetchBalance
+        const ethValue = result?.data?.formatted ?? (result?.data?.value ? formatEther(result.data.value) : "0");
         sendUnityEvent("OnBalance", JSON.stringify({ ok: true, address, balance: ethValue }));
       } catch (err) {
         console.error("Error fetching balance:", err);
@@ -191,6 +216,8 @@ const { data: balanceData } = useBalance({
       }
       break;
     }
+
+    // ... your existing cases follow here ...
 
 
 
@@ -534,17 +561,7 @@ const { data: balanceData } = useBalance({
   useEffect(() => { if (unityLoaded) sendUnityEvent("OnTimeLeftChanged", { timeLeft }); }, [timeLeft, unityLoaded, sendUnityEvent]);
   useEffect(() => { if (unityLoaded) sendUnityEvent("OnPeriodEndChanged", { periodEnd: periodEnd || 0 }); }, [periodEnd, unityLoaded, sendUnityEvent]);
   //update user balance on change
-  useEffect(() => {
-    if (balanceData && address) {
-      const payload = {
-        ok: true,
-        address,
-        balance: balanceData.formatted,
-      };
-      console.log("📤 Auto-sending balance to Unity:", payload);
-      sendUnityEvent("OnBalance", JSON.stringify(payload));
-    }
-  }, [balanceData, address]);
+ 
   // Load Unity WebGL
   useEffect(() => {
     const loaderUrl = "/Build/v1.loader.js";
