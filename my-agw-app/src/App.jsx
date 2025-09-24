@@ -9,6 +9,7 @@ import PrivyLoginButton from "./PrivyLoginButton";
 import contractJson from "./abi/WagerPoolSingleEntry.json";
 import { Toaster } from "react-hot-toast";
 import { parseEther } from "viem";
+import "./App.css";
 
 const abi = contractJson.abi;
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7b5dD44c75042535B4123052D2cF13206164AB3c";
@@ -549,17 +550,20 @@ export default function App() {
       <Toaster position="top-right" />
 
       {!unityLoaded && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "center", alignItems: "center", backgroundColor: "#000", zIndex: 10 }}>
-          <img src="/logo.png" alt="Loading..." style={{ width: 200, animation: "pulse 1.5s ease-in-out infinite both" }} />
+        <div className="loading-overlay">
+          <img src="/logo.png" alt="Loading..." />
         </div>
       )}
 
-      {unityLoaded && (
-        <>
-          <GameEntry connectionState={connectionState} />
-          <BalanceAndSend connectionState={connectionState} />
-        </>
-      )}
+
+              {/*
+        {unityLoaded && (
+          <>
+            <GameEntry connectionState={connectionState} />
+            <BalanceAndSend connectionState={connectionState} />
+          </>
+        )}
+        */}
 
       <style>{`
         @keyframes pulse {
