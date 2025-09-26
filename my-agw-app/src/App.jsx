@@ -63,36 +63,93 @@ export default function App() {
   useEffect(() => { fetchPeriod(); }, [fetchPeriod]);
 
  
+
+  //--------------------game session start 
+
+
+
+async function startGameSession() {
+  const API_BASE = import.meta.env.VITE_API_BASE || "https://apster-backend.onrender.com";
+  try {
+    const res = await fetch(`${API_BASE}/api/start-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const data = await res.json(); // { sessionId, expiresAt }
+
+    const payload = {
+      sessionId: data.sessionId,
+      seed: crypto.randomUUID(), // optional
+    };
+
+    sendUnityEvent("OnStartSession", JSON.stringify(payload));
+
+    console.log("Sent session to Unity:", payload);
+  } catch (err) {
+    console.error("Failed to start session:", err);
+  }
+}
+
+
+
+  //------------------------
+
+
  
 
 
   // ---------- sendToUnity / sendUnityEvent ----------
   const sendToUnity = useCallback((method, data) => {
-    try {
-      const payload = typeof data === "string" ? data : JSON.stringify(data);
-      if (window.unityInstance?.SendMessage) {
-        window.unityInstance.SendMessage("JSBridge", method, payload);
-      } else {
-        // fallback attempt if unityInstance exists but SendMessage not found
-        if (window.unityInstance && typeof window.unityInstance.SendMessage !== "function") {
-          console.warn("unityInstance exists but SendMessage not a function", window.unityInstance);
-        } else {
-          console.warn("Unity instance not ready for message:", method, payload);
-        }
-      }
-    } catch (e) {
-      console.error("Error in sendToUnity:", e);
-    }
-  }, []);
+  try {
+    const payload = typeof data === "string" ? data : JSON.stringify(data);
 
-  const sendUnityEvent = useCallback((method, payload = "") => {
-    if (!unityLoaded) {
-      // option: queue outgoing messages if needed
-      console.warn("sendUnityEvent skipped, unity not loaded:", method, payload);
-      return;
+    if(method !== "OnTimeLeftChanged")
+    {
+    console.groupCollapsed(`📤 sendToUnity called: ${method}`);
+    console.log("Payload:", payload);
+    console.log("unityInstance present?", !!window.unityInstance);
+    console.log("SendMessage type:", window.unityInstance?.SendMessage ? typeof window.unityInstance.SendMessage : "N/A");
     }
-    try { sendToUnity(method, payload); } catch (e) { console.warn("sendUnityEvent failed", e); }
-  }, [unityLoaded, sendToUnity]);
+    
+
+    if (window.unityInstance?.SendMessage) {
+      window.unityInstance.SendMessage("JSBridge", method, payload);
+      if(method !== "OnTimeLeftChanged")
+        {
+          console.log(`✅ Message sent to Unity: ${method}`);
+        }
+      
+    } else {
+      if (window.unityInstance && typeof window.unityInstance.SendMessage !== "function") {
+        console.warn("⚠ unityInstance exists but SendMessage not a function", window.unityInstance);
+      } else {
+        console.warn("⚠ Unity instance not ready for message:", method, payload);
+      }
+    }
+
+    console.groupEnd();
+  } catch (e) {
+    console.error("❌ Error in sendToUnity:", e, "Method:", method, "Data:", data);
+  }
+}, []);
+
+const sendUnityEvent = useCallback((method, payload = "") => {
+  if (!unityLoaded) {
+    console.warn("⏳ sendUnityEvent skipped (unity not loaded):", method, payload);
+    return;
+  }
+  try {
+     if(method !== "OnTimeLeftChanged")
+     {
+        console.log("🔹 sendUnityEvent -> sendToUnity:", method, payload);
+     }
+    
+    sendToUnity(method, payload);
+  } catch (e) {
+    console.warn("❌ sendUnityEvent failed:", e, "Method:", method, "Payload:", payload);
+  }
+}, [unityLoaded, sendToUnity]);
 
   // ---------- Helper: ensure correct chain ----------
   const ensureChain = useCallback(async () => {
@@ -219,6 +276,32 @@ const handleMessageFromUnity = useCallback(async (messageType, data) => {
 
     // ... your existing cases follow here ...
 
+    case "SubmitReplay": {
+            console.log("Received SubmitReplay from Unity:", data);
+
+            try {
+              // Unity already sends JSON with sessionId, userAddress, replay
+              const parsed = JSON.parse(data);
+
+              const API_BASE = (import.meta.env?.VITE_API_BASE) || "https://apster-backend.onrender.com";
+
+              const res = await fetch(`${API_BASE}/api/submit-replay`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(parsed),
+              });
+
+              const json = await res.json();
+              console.log("SubmitReplay backend response:", json);
+
+              sendUnityEvent("OnSubmitReplay", JSON.stringify(json));
+            } catch (err) {
+              console.error("SubmitReplay error:", err);
+              sendUnityEvent("OnSubmitReplay", JSON.stringify({ ok: false, error: String(err) }));
+            }
+            break;
+          }
+
 
 
       case "AddTwelve": {
@@ -327,6 +410,21 @@ const handleMessageFromUnity = useCallback(async (messageType, data) => {
         await submitScore(data);
         break;
       }
+      case "RequestStartSession": {
+            console.log("Unity -> React: RequestStartSession");
+            try {
+              if (address) {
+                await startGameSession();   // generates & sends session
+              } else {
+                console.warn("No wallet address — skipping start session");
+                sendUnityEvent("OnStartSession", JSON.stringify({ error: "no address" }));
+              }
+            } catch (err) {
+              console.error("Start session failed:", err);
+              sendUnityEvent("OnStartSession", JSON.stringify({ error: "start-session failed" }));
+            }
+            break;
+          }
 
       case "RequestLeaderBoard": {
           // allow unauthenticated public requests; include user if connected
